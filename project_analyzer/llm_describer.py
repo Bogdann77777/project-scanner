@@ -32,19 +32,27 @@ class FunctionDescriber:
         Returns:
             Промпт в виде строки
         """
-        prompt = """Ты - анализатор кода. Опиши ДЕТАЛЬНО каждую функцию ниже.
+        prompt = """Ты - эксперт по анализу кода. Твоя задача - дать МАКСИМАЛЬНО ДЕТАЛЬНОЕ описание каждой функции на РУССКОМ языке.
 
-Для каждой функции напиши:
-1. Что она делает (основная цель)
-2. КАК она это делает (логика, шаги)
-3. Какие данные принимает и возвращает
-4. Какие другие функции/модули использует
+КРИТИЧЕСКИ ВАЖНО: Описание должно быть настолько подробным, чтобы разработчик, который видит код первый раз, полностью понял:
+1. ЧТО делает функция (её назначение в проекте)
+2. КАК она это делает (пошаговая логика, алгоритм)
+3. КАКИЕ конкретные данные принимает (типы, форматы, примеры значений)
+4. ЧТО возвращает (тип результата, возможные варианты)
+5. КАКИЕ другие функции/модули/библиотеки использует
+6. КАКИЕ особые случаи или условия обрабатывает
+7. КАКИЕ конкретные настройки/параметры/константы использует (с их значениями!)
 
-Формат ответа - JSON массив:
+ПРИМЕРЫ ХОРОШЕГО ОПИСАНИЯ:
+- "Функция convert_text_to_speech преобразует текст в аудио. Она принимает строку text и словарь настроек settings. Внутри функция: 1) Очищает текст от специальных символов через regex r'[^\w\s]', 2) Разбивает на предложения по точкам, 3) Для каждого предложения вызывает TTS API с параметрами: voice='ru-RU-Wavenet-D', speed=1.2, pitch=0, 4) Склеивает аудио через pydub. Возвращает путь к итоговому MP3 файлу."
+
+- "Функция filter_special_chars удаляет все знаки препинания из текста. Конкретно удаляет: . , ! ? ; : - ( ) [ ] { } ' \" / \ @ # $ % ^ & *. Использует метод str.translate() с таблицей маппинга. Возвращает очищенную строку в lowercase."
+
+ФОРМАТ ОТВЕТА - чистый JSON массив (без markdown, без комментариев):
 [
   {
     "name": "function_name",
-    "description": "Подробное описание..."
+    "description": "Детальное описание на русском языке..."
   }
 ]
 
@@ -73,8 +81,18 @@ class FunctionDescriber:
             Функции с добавленным полем 'description'
         """
         try:
+            # Убираем возможные markdown блоки
+            clean_text = response_text.strip()
+            if clean_text.startswith('```json'):
+                clean_text = clean_text[7:]  # Убираем ```json
+            if clean_text.startswith('```'):
+                clean_text = clean_text[3:]  # Убираем ```
+            if clean_text.endswith('```'):
+                clean_text = clean_text[:-3]  # Убираем ```
+            clean_text = clean_text.strip()
+            
             # Пытаемся распарсить JSON
-            descriptions = json.loads(response_text)
+            descriptions = json.loads(clean_text)
 
             # Создаем словарь для быстрого поиска
             desc_map = {d['name']: d['description'] for d in descriptions}
@@ -83,16 +101,17 @@ class FunctionDescriber:
             for func in functions:
                 func['description'] = desc_map.get(
                     func['name'],
-                    f"Function {func['name']} (no description provided)"
+                    f"Функция {func['name']} (описание не предоставлено)"
                 )
 
             return functions
 
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
+            logger.error(f"    JSON parsing error: {e}")
+            logger.error(f"    Raw response: {response_text[:500]}...")
             # Если LLM вернул не JSON, пытаемся извлечь текст
-            # (fallback логика)
             for func in functions:
-                func['description'] = f"Function {func['name']} - parsing failed"
+                func['description'] = f"Функция {func['name']} - ошибка парсинга JSON"
             return functions
 
     def describe_functions_batch(self, functions: List[Dict]) -> List[Dict]:
@@ -128,7 +147,7 @@ class FunctionDescriber:
                 {'role': 'user', 'content': prompt}
             ],
             'temperature': 0.3,  # Низкая для точности
-            'max_tokens': 2000
+            'max_tokens': 4000  # Увеличил с 2000 для детальных описаний
         }
 
         try:

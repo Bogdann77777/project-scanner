@@ -81,43 +81,71 @@
                 </div>
             </div>
 
+            <!-- TABS: Switch between views -->
+            <div class="view-tabs">
+                <button class="view-tab active" data-view="graph">📊 Dependencies Graph</button>
+                <button class="view-tab" data-view="functions">📋 Functions Explorer</button>
+            </div>
+
             <!-- Main Content Area -->
             <div class="main-content">
-                <!-- Left Panel: File Tree -->
-                <div class="left-panel">
-                    <h3>Project Files</h3>
-                    <div id="fileTree" class="file-tree"></div>
-                </div>
+                <!-- VIEW 1: GRAPH VIEW -->
+                <div id="graphView" class="content-view active">
+                    <!-- Left Panel: File Tree -->
+                    <div class="left-panel">
+                        <h3>Project Files</h3>
+                        <div id="fileTree" class="file-tree"></div>
+                    </div>
 
-                <!-- Center Panel: Graph -->
-                <div class="center-panel">
-                    <!-- DEBUG INFO (С КНОПКОЙ ЗАКРЫТИЯ) -->
-                    <div id="debugInfo" style="position: absolute; top: 10px; left: 10px; z-index: 9999; background: rgba(0,0,0,0.95); color: lime; padding: 15px; font-family: monospace; font-size: 12px; max-width: 500px; max-height: 400px; overflow-y: auto; border: 3px solid lime; display: block;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                            <span style="font-size: 14px; font-weight: bold;">🔍 BROWSER DEBUG LOG</span>
-                            <button onclick="document.getElementById('debugInfo').style.display='none'" style="background: #ff4444; color: white; border: none; padding: 5px 10px; cursor: pointer; font-weight: bold;">✕ CLOSE</button>
+                    <!-- Center Panel: Graph -->
+                    <div class="center-panel">
+                        <!-- DEBUG INFO -->
+                        <div id="debugInfo" style="position: absolute; top: 10px; left: 10px; z-index: 9999; background: rgba(0,0,0,0.95); color: lime; padding: 15px; font-family: monospace; font-size: 12px; max-width: 500px; max-height: 400px; overflow-y: auto; border: 3px solid lime; display: none;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                <span style="font-size: 14px; font-weight: bold;">🔍 DEBUG LOG</span>
+                                <button onclick="document.getElementById('debugInfo').style.display='none'" style="background: #ff4444; color: white; border: none; padding: 5px 10px; cursor: pointer; font-weight: bold;">✕</button>
+                            </div>
+                            <div id="debugText" style="white-space: pre-wrap; word-break: break-all;"></div>
                         </div>
-                        <div id="debugText" style="white-space: pre-wrap; word-break: break-all;"></div>
+
+                        <div class="graph-controls">
+                            <button id="zoomInBtn">🔍 +</button>
+                            <button id="zoomOutBtn">🔍 -</button>
+                            <button id="resetZoomBtn">⟲ Reset</button>
+                            <button id="fitBtn">⛶ Fit All</button>
+                        </div>
+                        <div id="graphContainer" class="graph-container"></div>
                     </div>
 
-                    <div class="graph-controls">
-                        <button id="zoomInBtn">🔍 +</button>
-                        <button id="zoomOutBtn">🔍 -</button>
-                        <button id="resetZoomBtn">⟲ Reset</button>
-                        <button id="fitBtn">⛶ Fit All</button>
+                    <!-- Right Panel: Issues -->
+                    <div class="right-panel">
+                        <h3>Issues</h3>
+                        <div class="issues-tabs">
+                            <button class="tab-btn active" data-tab="errors">Errors <span id="errorCount" class="badge">0</span></button>
+                            <button class="tab-btn" data-tab="warnings">Warnings <span id="warningCount" class="badge">0</span></button>
+                            <button class="tab-btn" data-tab="info">Info <span id="infoCount" class="badge">0</span></button>
+                        </div>
+                        <div id="issuesList" class="issues-list"></div>
                     </div>
-                    <div id="graphContainer" class="graph-container"></div>
                 </div>
 
-                <!-- Right Panel: Issues -->
-                <div class="right-panel">
-                    <h3>Issues</h3>
-                    <div class="issues-tabs">
-                        <button class="tab-btn active" data-tab="errors">Errors <span id="errorCount" class="badge">0</span></button>
-                        <button class="tab-btn" data-tab="warnings">Warnings <span id="warningCount" class="badge">0</span></button>
-                        <button class="tab-btn" data-tab="info">Info <span id="infoCount" class="badge">0</span></button>
+                <!-- VIEW 2: FUNCTIONS EXPLORER -->
+                <div id="functionsView" class="content-view" style="display: none;">
+                    <!-- Left: File list with function counts -->
+                    <div class="functions-left-panel">
+                        <h3>Files & Functions</h3>
+                        <div id="functionsFileList" class="functions-file-list"></div>
                     </div>
-                    <div id="issuesList" class="issues-list"></div>
+
+                    <!-- Right: Function details -->
+                    <div class="functions-right-panel">
+                        <div id="functionDetailsPanel" class="function-details-panel">
+                            <div style="text-align: center; padding: 3rem; color: #888;">
+                                <h2>📋 Functions Explorer</h2>
+                                <p>Select a file from the left to see all functions</p>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

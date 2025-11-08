@@ -1,0 +1,715 @@
+PROJECT ANALYZER - PROJECT SCOPE
+1. ОБЩЕЕ ОПИСАНИЕ ПРОЕКТА
+Цель: Инструмент для анализа кодовых проектов, который автоматически раскладывает код на части, визуализирует зависимости и находит проблемы БЕЗ участия LLM (LLM только для описаний функций).
+Проблема, которую решаем:
+
+Разработчик не видит полную картину проекта
+Непонятно какие функции что делают и как связаны
+Проблемы в коде (обрывы логики, заглушки) прячутся
+Коммуникация с AI-ассистентом неэффективна из-за отсутствия структурированного view
+
+Решение:
+Программа, которая:
+
+Парсит проект (Python/JS/TS) → извлекает функции, классы, импорты
+Анализирует (чисто алгоритмически) → находит обрывы, заглушки, мертвый код
+Описывает (через LLM) → генерирует понятные описания "что делает функция и КАК"
+Визуализирует (web UI) → граф зависимостей, дерево файлов, список проблем
+
+
+2. АРХИТЕКТУРА СИСТЕМЫ
+2.1 Компоненты (Modules)
+┌─────────────────────────────────────────────────────────────┐
+│                         WEB UI (Flask)                       │
+│  - Upload interface                                          │
+│  - Progress tracking                                         │
+│  - Interactive graph visualization                           │
+│  - Issues dashboard                                          │
+└──────────────────────┬──────────────────────────────────────┘
+                       │ HTTP API
+                       ↓
+┌─────────────────────────────────────────────────────────────┐
+│                    ORCHESTRATOR (main.py)                    │
+│  - Координирует весь процесс анализа                        │
+│  - Управляет прогрессом                                     │
+│  - Собирает результаты                                      │
+└───┬──────────┬──────────┬──────────┬────────────────────────┘
+    │          │          │          │
+    ↓          ↓          ↓          ↓
+┌────────┐ ┌────────┐ ┌────────┐ ┌──────────┐
+│ PARSER │ │ANALYZER│ │  LLM   │ │VISUALIZER│
+│        │ │        │ │DESCRIBER│ │          │
+└────────┘ └────────┘ └────────┘ └──────────┘
+1. Parser (parser.py)
+
+Читает файлы проекта
+Строит AST (Abstract Syntax Tree)
+Извлекает: функции, классы, импорты, вызовы
+100% алгоритмический, без LLM
+
+2. Analyzer (analyzer.py)
+
+Строит граф зависимостей (NetworkX)
+Находит проблемы:
+
+Dead code (неиспользуемые функции)
+Broken calls (вызовы несуществующих функций)
+Placeholders (pass, TODO, NotImplementedError)
+Missing returns (функции без return)
+Unused imports
+
+
+100% алгоритмический, без LLM
+
+3. LLM Describer (llm_describer.py)
+
+Генерирует описания функций через OpenRouter API
+Батчами (по 10 функций за раз)
+Промпт: "Опиши ЧТО делает и КАК работает"
+Единственное место с LLM в проекте
+
+4. Visualizer (visualizer.py)
+
+Готовит данные для UI
+Форматы: nodes/edges для графа, дерево файлов, список проблем
+Группирует, сортирует, цветокодирует
+
+5. Orchestrator (main.py)
+
+Вызывает все модули в правильном порядке
+Отслеживает прогресс (progress_callback)
+Собирает финальный результат
+
+6. Web UI (ui/app.py + HTML/CSS/JS)
+
+Flask сервер (backend)
+vis.js граф (frontend)
+Drag-and-drop upload
+Real-time progress bar
+Interactive модальные окна
+
+
+3. DATA FLOW (Поток данных)
+3.1 Полный цикл анализа
+USER ACTION: Upload folder + Start Analysis
+         ↓
+[1] Flask /analyze endpoint
+         ↓
+[2] ProjectAnalyzer.analyze_project(path)
+         ↓
+┌────────────────────────────────────────┐
+│ ЭТАП 1: PARSING (10-40% прогресса)    │
+├────────────────────────────────────────┤
+│ CodeParser.parse_project()             │
+│   → Сканирует файлы (.py, .js, .ts)  │
+│   → Парсит каждый файл в AST          │
+│   → Извлекает функции/классы/импорты  │
+│   → Строит call graph                 │
+│                                        │
+│ OUTPUT:                                │
+│ {                                      │
+│   'files': [...],                     │
+│   'functions': [{                     │
+│     'name': 'func1',                  │
+│     'file': 'module.py',              │
+│     'line_start': 10,                 │
+│     'code': '...',                    │
+│     'calls': ['func2', 'func3']       │
+│   }],                                 │
+│   'classes': [...],                   │
+│   'imports': [...],                   │
+│   'call_graph': {                     │
+│     'func1': ['func2', 'func3']       │
+│   }                                    │
+│ }                                      │
+└────────────────────────────────────────┘
+         ↓
+┌────────────────────────────────────────┐
+│ ЭТАП 2: ANALYSIS (40-60% прогресса)   │
+├────────────────────────────────────────┤
+│ CodeAnalyzer.analyze()                 │
+│   → Строит NetworkX граф              │
+│   → find_dead_code()                  │
+│   → find_broken_calls()               │
+│   → find_placeholders()               │
+│   → find_missing_returns()            │
+│   → find_unused_imports()             │
+│                                        │
+│ OUTPUT:                                │
+│ [                                      │
+│   {                                    │
+│     'type': 'dead_code',              │
+│     'severity': 'warning',            │
+│     'file': 'module.py',              │
+│     'line': 45,                       │
+│     'function': 'unused_func',        │
+│     'message': 'Function never called'│
+│   },                                   │
+│   ...                                  │
+│ ]                                      │
+└────────────────────────────────────────┘
+         ↓
+┌────────────────────────────────────────┐
+│ ЭТАП 3: LLM DESCRIPTIONS (60-90%)     │
+├────────────────────────────────────────┤
+│ FunctionDescriber.describe_all()       │
+│   → Берет батч функций (10 шт)       │
+│   → Формирует промпт                  │
+│   → POST к OpenRouter API             │
+│   → Парсит JSON ответ                │
+│   → Добавляет 'description' к функциям│
+│   → Повторяет для следующего батча    │
+│                                        │
+│ OUTPUT:                                │
+│ [                                      │
+│   {                                    │
+│     'name': 'func1',                  │
+│     'file': 'module.py',              │
+│     'code': '...',                    │
+│     'description': 'Эта функция...    │
+│       Шаги: 1) ... 2) ... 3) ...'    │
+│   },                                   │
+│   ...                                  │
+│ ]                                      │
+└────────────────────────────────────────┘
+         ↓
+┌────────────────────────────────────────┐
+│ ЭТАП 4: VISUALIZATION (90-100%)       │
+├────────────────────────────────────────┤
+│ DataVisualizer.prepare_all_data()      │
+│   → prepare_graph_data()              │
+│      - nodes (функции с цветами)      │
+│      - edges (вызовы)                 │
+│   → prepare_file_tree()               │
+│      - структура папок/файлов         │
+│   → prepare_issues_list()             │
+│      - группировка по severity        │
+│   → prepare_stats()                   │
+│      - подсчет метрик                 │
+│                                        │
+│ OUTPUT:                                │
+│ {                                      │
+│   'graph': {                          │
+│     'nodes': [{                       │
+│       'id': 'func1',                  │
+│       'label': 'func1',               │
+│       'color': '#4CAF50',             │
+│       'data': {...}                   │
+│     }],                                │
+│     'edges': [{                       │
+│       'from': 'func1',                │
+│       'to': 'func2'                   │
+│     }]                                 │
+│   },                                   │
+│   'file_tree': [...],                 │
+│   'issues': {                         │
+│     'errors': [...],                  │
+│     'warnings': [...]                 │
+│   },                                   │
+│   'stats': {...}                      │
+│ }                                      │
+└────────────────────────────────────────┘
+         ↓
+[3] Flask /results/<project_id>
+         ↓
+[4] Frontend JavaScript
+         ↓
+[5] vis.js renders graph + UI updates
+         ↓
+USER sees: Graph + File Tree + Issues
+
+4. SEQUENCE DIAGRAM (Детальная последовательность)
+User          Flask           Orchestrator    Parser      Analyzer    LLM         Visualizer
+ |              |                  |            |            |          |             |
+ |--Upload----->|                  |            |            |          |             |
+ |--Start------>|                  |            |            |          |             |
+ |              |                  |            |            |          |             |
+ |              |--POST /analyze-->|            |            |          |             |
+ |              |                  |            |            |          |             |
+ |              |<--project_id-----|            |            |          |             |
+ |              |                  |            |            |          |             |
+ |<-project_id--|                  |            |            |          |             |
+ |              |                  |            |            |          |             |
+ |--Poll------->|                  |            |            |          |             |
+ | /progress    |                  |            |            |          |             |
+ |              |                  |            |            |          |             |
+ |              |                  |--parse---->|            |          |             |
+ |              |                  |            |            |          |             |
+ |              |                  |            |--scan files|          |             |
+ |              |                  |            |--AST parse |          |             |
+ |              |                  |            |--extract   |          |             |
+ |              |                  |            |            |          |             |
+ |              |                  |<-parsed_data------------|          |             |
+ |              |                  |            |            |          |             |
+ |<-progress 30%|<--callback-------|            |            |          |             |
+ |              |                  |            |            |          |             |
+ |              |                  |--analyze--------------->|          |             |
+ |              |                  |            |            |          |             |
+ |              |                  |            |--build graph          |             |
+ |              |                  |            |--find issues          |             |
+ |              |                  |            |            |          |             |
+ |              |                  |<-issues----------------|          |             |
+ |              |                  |            |            |          |             |
+ |<-progress 60%|<--callback-------|            |            |          |             |
+ |              |                  |            |            |          |             |
+ |              |                  |--describe------------------------>|             |
+ |              |                  |            |            |          |             |
+ |              |                  |            |            |     [batch 1-10]      |
+ |              |                  |            |            |          |             |
+ |              |                  |            |            |<--OpenRouter API      |
+ |              |                  |            |            |          |             |
+ |<-progress 70%|<--callback-------|            |            |          |             |
+ |              |                  |            |            |          |             |
+ |              |                  |            |            |     [batch 11-20]     |
+ |              |                  |            |            |          |             |
+ |<-progress 80%|<--callback-------|            |            |          |             |
+ |              |                  |            |            |          |             |
+ |              |                  |<-descriptions----------------------|             |
+ |              |                  |            |            |          |             |
+ |              |                  |--visualize----------------------------->|        |
+ |              |                  |            |            |          |             |
+ |              |                  |            |            |          |    [prepare graph]
+ |              |                  |            |            |          |    [prepare tree]
+ |              |                  |            |            |          |    [prepare issues]
+ |              |                  |            |            |          |             |
+ |              |                  |<-visual_data-----------------------------|        |
+ |              |                  |            |            |          |             |
+ |<-progress 100|<--callback-------|            |            |          |             |
+ |              |                  |            |            |          |             |
+ |--GET-------->|                  |            |            |          |             |
+ | /results     |                  |            |            |          |             |
+ |              |                  |            |            |          |             |
+ |<-JSON result-|                  |            |            |          |             |
+ |              |                  |            |            |          |             |
+ |  [renders graph in browser]    |            |            |          |             |
+
+5. API КОНТРАКТЫ (Точные форматы данных)
+5.1 Parser Output Format
+python{
+  "files": [
+    "src/parser.py",
+    "src/analyzer.py",
+    ...
+  ],
+  
+  "functions": [
+    {
+      "name": "parse_file",                    # Имя функции
+      "file": "src/parser.py",                 # Путь к файлу
+      "line_start": 45,                        # Начальная строка
+      "line_end": 67,                          # Конечная строка
+      "params": ["file_path", "encoding"],     # Параметры
+      "return_type": "Dict[str, Any]",         # Return type (если есть аннотация)
+      "code": "def parse_file(...):\n    ...", # Полный код функции
+      "docstring": "Parses a file...",         # Docstring (если есть)
+      "calls": ["read_file", "validate"],      # Какие функции вызывает
+      "is_async": false,                       # Async функция?
+      "decorators": ["@staticmethod"]          # Декораторы (если есть)
+    },
+    ...
+  ],
+  
+  "classes": [
+    {
+      "name": "Parser",
+      "file": "src/parser.py",
+      "line_start": 10,
+      "line_end": 200,
+      "methods": [...],                        # Список методов (как functions)
+      "bases": ["BaseParser"],                 # Родительские классы
+      "docstring": "Parser class..."
+    },
+    ...
+  ],
+  
+  "imports": [
+    {
+      "file": "src/parser.py",
+      "line": 5,
+      "module": "ast",                         # Что импортируем
+      "names": ["parse", "walk"],              # Конкретные имена
+      "alias": null                            # Если есть 'as'
+    },
+    ...
+  ],
+  
+  "call_graph": {
+    "parse_file": ["read_file", "validate"],
+    "read_file": ["open"],
+    "validate": []
+  }
+}
+5.2 Analyzer Output Format
+python[
+  {
+    "type": "dead_code",                      # Тип проблемы
+    "severity": "warning",                    # error | warning | info
+    "file": "src/utils.py",
+    "line": 45,
+    "function": "unused_helper",              # Имя функции (если применимо)
+    "message": "Function 'unused_helper' is never called"
+  },
+  {
+    "type": "broken_call",
+    "severity": "error",
+    "file": "src/parser.py",
+    "line": 67,
+    "function": "parse_file",
+    "message": "Calls undefined function 'nonexistent_func'"
+  },
+  {
+    "type": "placeholder",
+    "severity": "warning",
+    "file": "src/analyzer.py",
+    "line": 120,
+    "function": "find_issues",
+    "message": "Function 'find_issues' raises NotImplementedError"
+  },
+  {
+    "type": "missing_return",
+    "severity": "error",
+    "file": "src/main.py",
+    "line": 30,
+    "function": "process_data",
+    "message": "Function expects return type 'Dict' but has no return"
+  },
+  {
+    "type": "unused_import",
+    "severity": "info",
+    "file": "src/parser.py",
+    "line": 5,
+    "message": "Import 'json' is not used"
+  }
+]
+5.3 LLM Describer Output Format
+python[
+  {
+    "name": "parse_file",
+    "file": "src/parser.py",
+    "line_start": 45,
+    "line_end": 67,
+    "params": ["file_path", "encoding"],
+    "return_type": "Dict[str, Any]",
+    "code": "def parse_file(...):\n    ...",
+    "calls": ["read_file", "validate"],
+    
+    # ДОБАВЛЕНО LLM:
+    "description": "Эта функция парсит файл исходного кода в структуру данных.\n\nШаги работы:\n1. Открывает файл по пути file_path с указанной кодировкой\n2. Читает содержимое через функцию read_file()\n3. Проверяет размер файла (не больше 1MB)\n4. Парсит содержимое в AST (Abstract Syntax Tree) используя ast.parse()\n5. Валидирует структуру AST через validate()\n6. Возвращает словарь с метаданными файла\n\nИспользует модули: ast, pathlib, os"
+  },
+  ...
+]
+5.4 Visualizer Output Format
+python{
+  "graph": {
+    "nodes": [
+      {
+        "id": "parse_file",                   # Уникальный ID (имя функции)
+        "label": "parse_file",                # Отображаемый текст
+        "title": "Эта функция парсит...",    # Hover tooltip (description)
+        "group": "src/parser.py",             # Группа (файл)
+        "color": "#4CAF50",                   # Цвет ноды (зеленый = OK, красный = проблемы)
+        "font": {"color": "#ffffff"},
+        "data": {                             # Дополнительные данные для modal
+          "file": "src/parser.py",
+          "line": 45,
+          "params": ["file_path", "encoding"],
+          "code": "def parse_file(...):\n    ...",
+          "description": "Эта функция парсит..."
+        }
+      },
+      ...
+    ],
+    
+    "edges": [
+      {
+        "from": "parse_file",                 # От какой функции
+        "to": "read_file",                    # К какой функции
+        "arrows": "to",
+        "color": {"color": "#666666"}
+      },
+      ...
+    ]
+  },
+  
+  "file_tree": [
+    {
+      "name": "src",
+      "path": "src",
+      "type": "folder",
+      "children": [
+        {
+          "name": "parser.py",
+          "path": "src/parser.py",
+          "type": "file",
+          "children": []
+        },
+        ...
+      ]
+    },
+    ...
+  ],
+  
+  "issues": {
+    "errors": [
+      {
+        "type": "broken_call",
+        "severity": "error",
+        "file": "src/parser.py",
+        "line": 67,
+        "function": "parse_file",
+        "message": "Calls undefined function 'nonexistent_func'"
+      },
+      ...
+    ],
+    
+    "warnings": [
+      {
+        "type": "dead_code",
+        "severity": "warning",
+        "file": "src/utils.py",
+        "line": 45,
+        "function": "unused_helper",
+        "message": "Function 'unused_helper' is never called"
+      },
+      ...
+    ],
+    
+    "info": [
+      {
+        "type": "unused_import",
+        "severity": "info",
+        "file": "src/parser.py",
+        "line": 5,
+        "message": "Import 'json' is not used"
+      },
+      ...
+    ]
+  },
+  
+  "stats": {
+    "total_files": 15,
+    "total_functions": 87,
+    "total_classes": 12,
+    "total_issues": 23,
+    "errors": 3,
+    "warnings": 12,
+    "dead_code": 5,
+    "placeholders": 7
+  }
+}
+```
+
+---
+
+## 6. UI WORKFLOW (Пользовательский сценарий)
+
+### 6.1 Начальное состояние
+```
+┌─────────────────────────────────────┐
+│       PROJECT ANALYZER              │
+│                                     │
+│   ┌───────────────────────────┐   │
+│   │     📁                    │   │
+│   │                           │   │
+│   │  Drag & Drop project      │   │
+│   │  folder here              │   │
+│   │                           │   │
+│   │         or                │   │
+│   │                           │   │
+│   │   [Browse Folder]         │   │
+│   │                           │   │
+│   └───────────────────────────┘   │
+│                                     │
+└─────────────────────────────────────┘
+```
+
+### 6.2 После выбора папки
+```
+┌─────────────────────────────────────┐
+│       PROJECT ANALYZER              │
+│                                     │
+│   Selected: /home/user/my-project   │
+│                                     │
+│      [Start Analysis] ← кликабельная кнопка
+│                                     │
+└─────────────────────────────────────┘
+```
+
+### 6.3 Во время анализа
+```
+┌─────────────────────────────────────┐
+│    Analyzing Project...             │
+│                                     │
+│   ████████░░░░░░░░░░░░░ 60%        │
+│                                     │
+│   Generating function descriptions...│
+│                                     │
+└─────────────────────────────────────┘
+```
+
+### 6.4 Результаты (финальный UI)
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ PROJECT ANALYZER                                    [⚙️ Settings] │
+├──────────────────────────────────────────────────────────────────┤
+│ Files: 15 | Functions: 87 | Classes: 12 | Errors: 3 | Warnings: 12│
+├──────────────────────────────────────────────────────────────────┤
+│          │                                  │                     │
+│  FILES   │         DEPENDENCY GRAPH         │      ISSUES         │
+│          │                                  │                     │
+│ 📁 src   │      ┌───┐      ┌───┐          │  [Errors: 3]        │
+│  📄 main │      │ A │─────▶│ B │          │  [Warnings: 12]     │
+│  📄 parser│     └───┘      └───┘          │  [Info: 8]          │
+│  📄 utils│        │          ▲            │                     │
+│ 📁 tests │        │          │            │  ❌ broken_call     │
+│  📄 test │        ▼          │            │  parser.py:67       │
+│          │      ┌───┐      ┌───┐          │                     │
+│          │      │ C │─────▶│ D │          │  ⚠️ dead_code       │
+│          │      └───┘      └───┘          │  utils.py:45        │
+│          │                                  │                     │
+│          │   [🔍+ 🔍- ⟲ ⛶]                │  ℹ️ unused_import  │
+│          │                                  │  main.py:5          │
+│          │                                  │                     │
+└──────────┴──────────────────────────────────┴─────────────────────┘
+Интерактивность:
+
+Клик на ноду графа → открывается modal с деталями функции
+Клик на файл в дереве → фильтрует граф по этому файлу
+Клик на issue → подсвечивает соответствующую ноду
+Hover на ноду → показывает description в tooltip
+
+
+7. ТЕХНОЛОГИЧЕСКИЙ СТЕК
+Backend (Python)
+
+Flask - веб-сервер
+ast (встроенный) - парсинг Python кода
+NetworkX - граф зависимостей
+requests - OpenRouter API
+python-dotenv - .env файлы
+
+Frontend
+
+HTML5/CSS3 - структура и стили
+JavaScript (Vanilla) - логика UI
+vis.js - визуализация графа (https://visjs.org/)
+
+External APIs
+
+OpenRouter - LLM для описаний функций
+
+
+8. ОГРАНИЧЕНИЯ И ДОПУЩЕНИЯ
+8.1 Что НЕ делает система
+
+❌ Не исправляет код автоматически
+❌ Не компилирует/запускает код
+❌ Не работает с бинарными файлами
+❌ Не анализирует runtime поведение
+❌ Не поддерживает все языки (только Python/JS/TS на старте)
+
+8.2 Допущения
+
+✅ Код синтаксически корректный (парсится в AST)
+✅ Проект помещается в память (разумный размер)
+✅ Файлы в UTF-8 кодировке
+✅ OpenRouter API доступен
+✅ Пользователь имеет API ключ
+
+8.3 Производительность
+
+Парсинг: ~100 файлов в секунду
+Анализ: ~50 функций в секунду
+LLM описания: ~10 функций за 3-5 секунд (зависит от модели)
+Общее время для проекта на 500 функций: ~2-3 минуты
+
+
+9. ЦВЕТОВАЯ СХЕМА ГРАФА
+Ноды окрашиваются по типу проблемы:
+
+🟢 #4CAF50 (Зеленый) - Функция без проблем
+🔴 #F44336 (Красный) - Есть ошибки (error severity)
+🟠 #FF9800 (Оранжевый) - Есть предупреждения (warning severity)
+🔵 #2196F3 (Синий) - Есть инфо (info severity)
+⚪ #9E9E9E (Серый) - Мертвый код (dead_code)
+
+Ребра (связи):
+
+#666666 (Серый) - Обычный вызов функции
+#4CAF50 (Зеленый) - При hover/select
+
+
+10. КОНФИГУРАЦИЯ
+10.1 Config.py параметры
+python# API
+OPENROUTER_API_KEY = "sk-or-v1-..."  # Обязательный
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+
+# LLM
+LLM_MODEL = "anthropic/claude-3-5-haiku-20241022"  # Можно менять в UI
+AVAILABLE_MODELS = [
+    "anthropic/claude-3-5-haiku-20241022",
+    "openai/gpt-4o-mini",
+    "deepseek/deepseek-coder",
+    "google/gemini-flash-1.5"
+]
+
+# Парсинг
+SUPPORTED_EXTENSIONS = [".py", ".js", ".ts", ".jsx", ".tsx"]
+IGNORE_DIRS = ["node_modules", "__pycache__", ".git", "venv"]
+MAX_FILE_SIZE = 1024 * 1024  # 1MB
+
+# LLM
+MAX_FUNCTIONS_PER_BATCH = 10  # Батч для описаний
+LLM_TIMEOUT = 60  # секунд
+
+# UI
+UI_PORT = 8000
+UI_HOST = "0.0.0.0"
+DEBUG = True
+10.2 .env файл
+bashOPENROUTER_API_KEY=sk-or-v1-your-key-here
+LLM_MODEL=anthropic/claude-3-5-haiku-20241022
+
+11. ТЕСТИРОВАНИЕ
+11.1 Тестовые сценарии
+Сценарий 1: Простой проект
+
+Input: 5 файлов, 20 функций
+Ожидаемое время: 30 секунд
+Проверка: все функции в графе, описания сгенерированы
+
+Сценарий 2: Проект с проблемами
+
+Input: проект с заглушками, мертвым кодом
+Проверка: все проблемы найдены и отображены
+
+Сценарий 3: Большой проект
+
+Input: 100 файлов, 500 функций
+Ожидаемое время: 3-5 минут
+Проверка: система не падает, все данные корректны
+
+
+12. ROADMAP РАЗВИТИЯ
+MVP (Current Scope)
+
+✅ Python парсинг
+✅ Базовый анализ проблем
+✅ LLM описания
+✅ Web UI с графом
+
+Phase 2
+
+🔜 JavaScript/TypeScript полная поддержка
+🔜 Экспорт отчетов (PDF, Markdown)
+🔜 Сохранение результатов в БД
+🔜 Сравнение версий проекта (diff)
+
+Phase 3
+
+🔜 Multi-user support
+🔜 GitHub integration
+🔜 CI/CD плагин
+🔜 Code quality score
+

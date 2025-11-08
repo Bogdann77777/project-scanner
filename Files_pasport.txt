@@ -1,0 +1,2036 @@
+PROJECT ANALYZER - COMPLETE FILE PASSPORTS
+СТРУКТУРА ПРОЕКТА
+project_analyzer/
+├── config.py
+├── parser.py
+├── analyzer.py
+├── llm_describer.py
+├── visualizer.py
+├── main.py
+├── requirements.txt
+├── .env
+├── README.md
+└── ui/
+    ├── app.py
+    ├── templates/
+    │   └── index.html
+    └── static/
+        ├── css/
+        │   └── styles.css
+        └── js/
+            └── graph.js
+
+1. config.py
+Назначение: Конфигурация всего проекта - API ключи, модель, настройки
+Импорты:
+pythonimport os
+from dotenv import load_dotenv
+Код:
+pythonload_dotenv()  # Загружает .env файл
+
+class Config:
+    # OpenRouter API
+    OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+    OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+    
+    # Модель для описаний (можно менять через UI)
+    LLM_MODEL = os.getenv("LLM_MODEL", "anthropic/claude-3-5-haiku-20241022")
+    
+    # Альтернативные модели (для выбора в UI)
+    AVAILABLE_MODELS = [
+        "anthropic/claude-3-5-haiku-20241022",
+        "openai/gpt-4o-mini",
+        "deepseek/deepseek-coder",
+        "google/gemini-flash-1.5"
+    ]
+    
+    # Настройки анализа
+    MAX_FUNCTIONS_PER_BATCH = 10  # Сколько функций описывать за раз
+    SUPPORTED_EXTENSIONS = [".py", ".js", ".ts", ".jsx", ".tsx"]
+    IGNORE_DIRS = ["node_modules", "__pycache__", ".git", "venv", "env", ".venv"]
+    
+    # UI настройки
+    UI_PORT = 8000
+    UI_HOST = "0.0.0.0"
+    DEBUG = True
+    
+    # Timeouts
+    LLM_TIMEOUT = 60  # секунд на один батч
+    MAX_FILE_SIZE = 1024 * 1024  # 1MB максимум на файл
+Логика:
+
+Загружает переменные из .env
+Предоставляет дефолтные значения если .env пустой
+Список доступных моделей для UI dropdown
+
+
+2. parser.py
+Назначение: Алгоритмический парсер кода - читает файлы, строит AST, извлекает функции/классы/импорты
+Импорты:
+pythonimport ast
+import os
+from pathlib import Path
+import json
+from typing import Dict, List, Any, Optional
+Класс CodeParser:
+__init__(self, project_path: str)
+pythonself.project_path = Path(project_path)
+self.parsed_data = {
+    'files': [],
+    'functions': [],
+    'classes': [],
+    'imports': [],
+    'call_graph': {}
+}
+parse_project(self) -> Dict[str, Any]
+Что делает:
+
+Сканирует self.project_path рекурсивно
+Находит все файлы с расширениями из Config.SUPPORTED_EXTENSIONS
+Игнорирует папки из Config.IGNORE_DIRS
+Для каждого файла вызывает parse_file()
+Возвращает self.parsed_data
+
+Логика:
+pythonfor root, dirs, files in os.walk(self.project_path):
+    # Удаляем игнорируемые папки
+    dirs[:] = [d for d in dirs if d not in Config.IGNORE_DIRS]
+    
+    for file in files:
+        if any(file.endswith(ext) for ext in Config.SUPPORTED_EXTENSIONS):
+            file_path = Path(root) / file
+            self.parse_file(file_path)
+
+return self.parsed_data
+parse_file(self, file_path: Path) -> None
+Что делает:
+
+Читает файл
+Проверяет размер (не больше Config.MAX_FILE_SIZE)
+Если .py - парсит через ast.parse()
+Извлекает функции, классы, импорты
+Добавляет в self.parsed_data
+
+Логика:
+pythontry:
+    with open(file_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+    
+    # Проверка размера
+    if len(content.encode('utf-8')) > Config.MAX_FILE_SIZE:
+        return  # Пропускаем слишком большие файлы
+    
+    # Парсинг Python
+    if file_path.suffix == '.py':
+        tree = ast.parse(content)
+        self._extract_python(tree, file_path, content)
+    
+    # TODO: JS/TS парсинг через esprima или babel parser
+    
+except Exception as e:
+    # Логируем ошибку, но не падаем
+    print(f"Error parsing {file_path}: {e}")
+_extract_python(self, tree: ast.AST, file_path: Path, content: str) -> None
+Что делает:
+
+Обходит AST дерево
+Для каждой функции (ast.FunctionDef) вызывает _extract_function()
+Для каждого класса (ast.ClassDef) вызывает _extract_class()
+Для импортов (ast.Import, ast.ImportFrom) вызывает _extract_import()
+
+Логика:
+pythonfor node in ast.walk(tree):
+    if isinstance(node, ast.FunctionDef):
+        self._extract_function(node, file_path, content)
+    elif isinstance(node, ast.ClassDef):
+        self._extract_class(node, file_path, content)
+    elif isinstance(node, (ast.Import, ast.ImportFrom)):
+        self._extract_import(node, file_path)
+_extract_function(self, node: ast.FunctionDef, file_path: Path, content: str) -> Dict
+Что делает:
+
+Извлекает имя функции
+Параметры (args)
+Return type если есть аннотация
+Строки кода (начало/конец)
+Сам код функции (из content по строкам)
+Docstring если есть
+Вызовы других функций внутри (_extract_calls())
+
+Возвращает:
+python{
+    'name': 'parse_data',
+    'file': 'parser.py',
+    'line_start': 45,
+    'line_end': 67,
+    'params': ['data', 'config'],
+    'return_type': 'Dict[str, Any]',  # если есть аннотация
+    'code': '... полный код функции ...',
+    'docstring': '... если есть ...',
+    'calls': ['helper_func', 'another_func'],  # какие функции вызывает
+    'is_async': False,
+    'decorators': ['@staticmethod']  # если есть
+}
+Логика извлечения calls:
+pythoncalls = []
+for sub_node in ast.walk(node):
+    if isinstance(sub_node, ast.Call):
+        if isinstance(sub_node.func, ast.Name):
+            calls.append(sub_node.func.id)
+        elif isinstance(sub_node.func, ast.Attribute):
+            calls.append(sub_node.func.attr)
+_extract_class(self, node: ast.ClassDef, file_path: Path, content: str) -> Dict
+Аналогично функции, но для класса:
+python{
+    'name': 'Parser',
+    'file': 'parser.py',
+    'line_start': 10,
+    'line_end': 100,
+    'methods': [...],  # список методов (как функции)
+    'bases': ['BaseParser'],  # родительские классы
+    'docstring': '...'
+}
+_extract_import(self, node: Union[ast.Import, ast.ImportFrom], file_path: Path) -> Dict
+Что делает:
+python{
+    'file': 'parser.py',
+    'line': 5,
+    'module': 'ast',  # что импортируем
+    'names': ['parse', 'walk'],  # конкретные имена
+    'alias': None  # если есть 'as'
+}
+build_call_graph(self) -> Dict[str, List[str]]
+Что делает:
+
+Для каждой функции смотрит calls
+Строит граф: {function_name: [called_func1, called_func2]}
+
+Возвращает:
+python{
+    'parse_data': ['read_file', 'validate'],
+    'read_file': ['open', 'decode'],
+    'validate': []
+}
+
+3. analyzer.py
+Назначение: Находит проблемы в коде - мертвый код, обрывы, заглушки
+Импорты:
+pythonimport ast
+from typing import Dict, List, Any, Set
+import networkx as nx
+Класс CodeAnalyzer:
+__init__(self, parsed_data: Dict[str, Any])
+pythonself.parsed_data = parsed_data
+self.issues = []
+self.call_graph = nx.DiGraph()  # Направленный граф
+self._build_graph()
+_build_graph(self) -> None
+Что делает:
+Строит networkx граф из call_graph данных парсера
+pythonfor func in self.parsed_data['functions']:
+    self.call_graph.add_node(func['name'])
+    for called in func.get('calls', []):
+        self.call_graph.add_edge(func['name'], called)
+analyze(self) -> List[Dict]
+Что делает:
+Запускает все проверки и возвращает список проблем
+pythonself.find_dead_code()
+self.find_broken_calls()
+self.find_placeholders()
+self.find_missing_returns()
+self.find_unused_imports()
+return self.issues
+find_dead_code(self) -> None
+Что делает:
+Находит функции, которые никто не вызывает (нет входящих ребер в графе)
+Логика:
+pythonfor func in self.parsed_data['functions']:
+    func_name = func['name']
+    
+    # Пропускаем entry points
+    if func_name in ['main', '__init__', '__main__']:
+        continue
+    
+    # Проверяем есть ли входящие вызовы
+    if self.call_graph.in_degree(func_name) == 0:
+        self.issues.append({
+            'type': 'dead_code',
+            'severity': 'warning',
+            'file': func['file'],
+            'line': func['line_start'],
+            'function': func_name,
+            'message': f"Function '{func_name}' is never called"
+        })
+find_broken_calls(self) -> None
+Что делает:
+Находит вызовы функций, которые не существуют в проекте
+Логика:
+pythonall_functions = {f['name'] for f in self.parsed_data['functions']}
+all_imports = {imp['module'] for imp in self.parsed_data['imports']}
+
+for func in self.parsed_data['functions']:
+    for called in func.get('calls', []):
+        # Если вызов не в списке функций и не импортирован
+        if called not in all_functions and called not in all_imports:
+            # Пропускаем встроенные (print, len, etc.)
+            if called not in dir(__builtins__):
+                self.issues.append({
+                    'type': 'broken_call',
+                    'severity': 'error',
+                    'file': func['file'],
+                    'line': func['line_start'],
+                    'function': func['name'],
+                    'message': f"Calls undefined function '{called}'"
+                })
+find_placeholders(self) -> None
+Что делает:
+Ищет в коде функций: pass, TODO, FIXME, raise NotImplementedError
+Логика:
+pythonfor func in self.parsed_data['functions']:
+    code = func['code']
+    
+    # Проверяем на pass (если это единственная строка)
+    if code.strip() == 'pass':
+        self.issues.append({
+            'type': 'placeholder',
+            'severity': 'warning',
+            'file': func['file'],
+            'line': func['line_start'],
+            'function': func['name'],
+            'message': f"Function '{func['name']}' is empty (only 'pass')"
+        })
+    
+    # Проверяем TODO/FIXME
+    if 'TODO' in code or 'FIXME' in code:
+        self.issues.append({
+            'type': 'placeholder',
+            'severity': 'info',
+            'file': func['file'],
+            'line': func['line_start'],
+            'function': func['name'],
+            'message': f"Function '{func['name']}' has TODO/FIXME comment"
+        })
+    
+    # Проверяем NotImplementedError
+    if 'NotImplementedError' in code:
+        self.issues.append({
+            'type': 'placeholder',
+            'severity': 'warning',
+            'file': func['file'],
+            'line': func['line_start'],
+            'function': func['name'],
+            'message': f"Function '{func['name']}' raises NotImplementedError"
+        })
+find_missing_returns(self) -> None
+Что делает:
+Находит функции с return type аннотацией, но без return statement
+Логика:
+pythonfor func in self.parsed_data['functions']:
+    # Если есть аннотация return и это не None/void
+    if func.get('return_type') and func['return_type'] != 'None':
+        code = func['code']
+        
+        # Ищем 'return' в коде (простая проверка)
+        if 'return' not in code:
+            self.issues.append({
+                'type': 'missing_return',
+                'severity': 'error',
+                'file': func['file'],
+                'line': func['line_start'],
+                'function': func['name'],
+                'message': f"Function expects return type '{func['return_type']}' but has no return"
+            })
+find_unused_imports(self) -> None
+Что делает:
+Находит импорты, которые не используются в коде файла
+Логика:
+python# Группируем импорты по файлам
+imports_by_file = {}
+for imp in self.parsed_data['imports']:
+    file = imp['file']
+    if file not in imports_by_file:
+        imports_by_file[file] = []
+    imports_by_file[file].extend(imp['names'])
+
+# Собираем все используемые имена в файле
+for file, imports in imports_by_file.items():
+    # Находим все функции в этом файле
+    file_funcs = [f for f in self.parsed_data['functions'] if f['file'] == file]
+    
+    # Собираем все вызовы
+    used_names = set()
+    for func in file_funcs:
+        used_names.update(func.get('calls', []))
+    
+    # Проверяем какие импорты не используются
+    for imp_name in imports:
+        if imp_name not in used_names:
+            self.issues.append({
+                'type': 'unused_import',
+                'severity': 'info',
+                'file': file,
+                'line': 0,  # TODO: можно добавить строку импорта
+                'message': f"Import '{imp_name}' is not used"
+            })
+
+4. llm_describer.py
+Назначение: Генерирует описания функций через LLM (OpenRouter API)
+Импорты:
+pythonimport requests
+import json
+from typing import List, Dict, Any
+from config import Config
+import time
+Класс FunctionDescriber:
+__init__(self, api_key: str = None, model: str = None)
+pythonself.api_key = api_key or Config.OPENROUTER_API_KEY
+self.model = model or Config.LLM_MODEL
+self.base_url = Config.OPENROUTER_BASE_URL
+self.timeout = Config.LLM_TIMEOUT
+describe_functions_batch(self, functions: List[Dict]) -> List[Dict]
+Что делает:
+
+Берет список функций (до Config.MAX_FUNCTIONS_PER_BATCH)
+Формирует промпт через _build_prompt()
+Отправляет запрос к OpenRouter API
+Парсит ответ через _parse_response()
+Возвращает функции с добавленным полем description
+
+Логика:
+pythonprompt = self._build_prompt(functions)
+
+headers = {
+    'Authorization': f'Bearer {self.api_key}',
+    'Content-Type': 'application/json',
+    'HTTP-Referer': 'http://localhost:8000',  # Required by OpenRouter
+}
+
+data = {
+    'model': self.model,
+    'messages': [
+        {'role': 'user', 'content': prompt}
+    ],
+    'temperature': 0.3,  # Низкая для точности
+    'max_tokens': 2000
+}
+
+try:
+    response = requests.post(
+        f'{self.base_url}/chat/completions',
+        headers=headers,
+        json=data,
+        timeout=self.timeout
+    )
+    response.raise_for_status()
+    
+    result = response.json()
+    description_text = result['choices'][0]['message']['content']
+    
+    return self._parse_response(description_text, functions)
+    
+except Exception as e:
+    print(f"LLM error: {e}")
+    # Возвращаем функции с дефолтным описанием
+    for func in functions:
+        func['description'] = f"Function {func['name']} (description generation failed)"
+    return functions
+_build_prompt(self, functions: List[Dict]) -> str
+Что делает:
+Создает промпт для LLM с четкими инструкциями
+Промпт:
+pythonprompt = """Ты - анализатор кода. Опиши ДЕТАЛЬНО каждую функцию ниже.
+
+Для каждой функции напиши:
+1. Что она делает (основная цель)
+2. КАК она это делает (логика, шаги)
+3. Какие данные принимает и возвращает
+4. Какие другие функции/модули использует
+
+Формат ответа - JSON массив:
+[
+  {
+    "name": "function_name",
+    "description": "Подробное описание..."
+  }
+]
+
+Функции для анализа:
+"""
+
+for i, func in enumerate(functions, 1):
+    prompt += f"\n\n--- Функция {i} ---\n"
+    prompt += f"Имя: {func['name']}\n"
+    prompt += f"Файл: {func['file']}\n"
+    prompt += f"Параметры: {func.get('params', [])}\n"
+    if func.get('docstring'):
+        prompt += f"Docstring: {func['docstring']}\n"
+    prompt += f"Код:\n```python\n{func['code']}\n```\n"
+
+return prompt
+_parse_response(self, response_text: str, functions: List[Dict]) -> List[Dict]
+Что делает:
+Парсит JSON ответ от LLM и добавляет описания к функциям
+Логика:
+pythontry:
+    # Пытаемся распарсить JSON
+    descriptions = json.loads(response_text)
+    
+    # Создаем словарь для быстрого поиска
+    desc_map = {d['name']: d['description'] for d in descriptions}
+    
+    # Добавляем описания к функциям
+    for func in functions:
+        func['description'] = desc_map.get(
+            func['name'],
+            f"Function {func['name']} (no description provided)"
+        )
+    
+    return functions
+    
+except json.JSONDecodeError:
+    # Если LLM вернул не JSON, пытаемся извлечь текст
+    # (fallback логика)
+    for func in functions:
+        func['description'] = f"Function {func['name']} - parsing failed"
+    return functions
+describe_all_functions(self, all_functions: List[Dict], progress_callback=None) -> List[Dict]
+Что делает:
+Обрабатывает ВСЕ функции проекта батчами
+Логика:
+pythondescribed = []
+total = len(all_functions)
+batch_size = Config.MAX_FUNCTIONS_PER_BATCH
+
+for i in range(0, total, batch_size):
+    batch = all_functions[i:i+batch_size]
+    
+    if progress_callback:
+        progress = 60 + (i / total) * 30  # 60-90% общего прогресса
+        progress_callback(f"Describing functions {i+1}-{min(i+batch_size, total)}...", progress)
+    
+    described_batch = self.describe_functions_batch(batch)
+    described.extend(described_batch)
+    
+    # Небольшая задержка между батчами (rate limiting)
+    if i + batch_size < total:
+        time.sleep(1)
+
+return described
+
+5. visualizer.py
+Назначение: Готовит данные для UI - граф, дерево файлов, список проблем
+Импорты:
+pythonimport json
+from typing import Dict, List, Any
+from pathlib import Path
+Класс DataVisualizer:
+__init__(self, parsed_data: Dict, issues: List[Dict], descriptions: List[Dict])
+pythonself.parsed_data = parsed_data
+self.issues = issues
+self.functions = descriptions  # функции с описаниями
+self.classes = parsed_data['classes']
+prepare_all_data(self) -> Dict[str, Any]
+Что делает:
+Вызывает все prepare методы и возвращает один большой JSON
+Возвращает:
+python{
+    'graph': self.prepare_graph_data(),
+    'file_tree': self.prepare_file_tree(),
+    'issues': self.prepare_issues_list(),
+    'stats': self.prepare_stats()
+}
+prepare_graph_data(self) -> Dict[str, Any]
+Что делает:
+Создает nodes и edges для визуализации графа
+Формат для vis.js:
+pythonnodes = []
+edges = []
+
+# Создаем ноды для функций
+for func in self.functions:
+    # Определяем цвет по проблемам
+    color = self._get_node_color(func)
+    
+    nodes.append({
+        'id': func['name'],
+        'label': func['name'],
+        'title': func.get('description', ''),  # Hover tooltip
+        'group': func['file'],  # Группировка по файлам
+        'color': color,
+        'font': {'color': '#ffffff'},
+        'data': {  # Дополнительные данные
+            'file': func['file'],
+            'line': func['line_start'],
+            'params': func.get('params', []),
+            'code': func['code'],
+            'description': func.get('description', '')
+        }
+    })
+
+# Создаем ребра (вызовы)
+for func in self.functions:
+    for called in func.get('calls', []):
+        edges.append({
+            'from': func['name'],
+            'to': called,
+            'arrows': 'to',
+            'color': {'color': '#666666'}
+        })
+
+return {
+    'nodes': nodes,
+    'edges': edges
+}
+_get_node_color(self, func: Dict) -> str
+Что делает:
+Определяет цвет ноды по типу проблемы
+Логика:
+pythonfunc_issues = [
+    issue for issue in self.issues
+    if issue.get('function') == func['name']
+]
+
+if not func_issues:
+    return '#4CAF50'  # Зеленый - все ок
+
+# Приоритет: error > warning > info
+severities = [issue['severity'] for issue in func_issues]
+
+if 'error' in severities:
+    return '#F44336'  # Красный
+elif 'warning' in severities:
+    return '#FF9800'  # Оранжевый
+else:
+    return '#2196F3'  # Синий
+prepare_file_tree(self) -> List[Dict]
+Что делает:
+Строит дерево папок и файлов проекта
+Формат:
+pythontree = {}
+
+for func in self.functions:
+    file_path = func['file']
+    parts = Path(file_path).parts
+    
+    # Строим вложенную структуру
+    current = tree
+    for part in parts:
+        if part not in current:
+            current[part] = {}
+        current = current[part]
+
+# Конвертируем в список для UI
+def dict_to_tree(d, parent=''):
+    result = []
+    for key, value in d.items():
+        node = {
+            'name': key,
+            'path': f"{parent}/{key}" if parent else key,
+            'type': 'folder' if value else 'file',
+            'children': dict_to_tree(value, f"{parent}/{key}") if value else []
+        }
+        result.append(node)
+    return result
+
+return dict_to_tree(tree)
+prepare_issues_list(self) -> Dict[str, List[Dict]]
+Что делает:
+Группирует проблемы по типам
+Возвращает:
+pythongrouped = {
+    'errors': [],
+    'warnings': [],
+    'info': []
+}
+
+for issue in self.issues:
+    severity = issue['severity']
+    if severity == 'error':
+        grouped['errors'].append(issue)
+    elif severity == 'warning':
+        grouped['warnings'].append(issue)
+    else:
+        grouped['info'].append(issue)
+
+# Сортируем по файлу и строке
+for category in grouped.values():
+    category.sort(key=lambda x: (x['file'], x.get('line', 0)))
+
+return grouped
+prepare_stats(self) -> Dict[str, int]
+Что делает:
+Считает статистику проекта
+Возвращает:
+python{
+    'total_files': len(set(f['file'] for f in self.functions)),
+    'total_functions': len(self.functions),
+    'total_classes': len(self.classes),
+    'total_issues': len(self.issues),
+    'errors': len([i for i in self.issues if i['severity'] == 'error']),
+    'warnings': len([i for i in self.issues if i['severity'] == 'warning']),
+    'dead_code': len([i for i in self.issues if i['type'] == 'dead_code']),
+    'placeholders': len([i for i in self.issues if i['type'] == 'placeholder'])
+}
+
+6. main.py
+Назначение: Оркестратор - связывает все модули, управляет процессом анализа
+Импорты:
+pythonfrom pathlib import Path
+from typing import Dict, Any, Callable, Optional
+import json
+from config import Config
+from parser import CodeParser
+from analyzer import CodeAnalyzer
+from llm_describer import FunctionDescriber
+from visualizer import DataVisualizer
+Класс ProjectAnalyzer:
+__init__(self, config: Config = None)
+pythonself.config = config or Config()
+self.results = None
+analyze_project(self, project_path: str, progress_callback: Optional[Callable] = None) -> Dict[str, Any]
+Что делает:
+Полный цикл анализа проекта
+Логика:
+pythontry:
+    # Этап 1: Парсинг структуры (10-40%)
+    if progress_callback:
+        progress_callback("Parsing project structure...", 10)
+    
+    parser = CodeParser(project_path)
+    parsed_data = parser.parse_project()
+    
+    if progress_callback:
+        progress_callback("Building call graph...", 30)
+    
+    call_graph = parser.build_call_graph()
+    parsed_data['call_graph'] = call_graph
+    
+    # Этап 2: Анализ проблем (40-60%)
+    if progress_callback:
+        progress_callback("Analyzing code issues...", 40)
+    
+    analyzer = CodeAnalyzer(parsed_data)
+    issues = analyzer.analyze()
+    
+    # Этап 3: Генерация описаний через LLM (60-90%)
+    if progress_callback:
+        progress_callback("Generating function descriptions...", 60)
+    
+    describer = FunctionDescriber(
+        api_key=self.config.OPENROUTER_API_KEY,
+        model=self.config.LLM_MODEL
+    )
+    
+    functions_with_descriptions = describer.describe_all_functions(
+        parsed_data['functions'],
+        progress_callback=progress_callback
+    )
+    
+    # Этап 4: Подготовка визуализации (90-100%)
+    if progress_callback:
+        progress_callback("Preparing visualization...", 90)
+    
+    visualizer = DataVisualizer(
+        parsed_data={'functions': functions_with_descriptions, 'classes': parsed_data['classes']},
+        issues=issues,
+        descriptions=functions_with_descriptions
+    )
+    
+    self.results = visualizer.prepare_all_data()
+    
+    if progress_callback:
+        progress_callback("Analysis complete!", 100)
+    
+    return self.results
+
+except Exception as e:
+    if progress_callback:
+        progress_callback(f"Error: {str(e)}", -1)
+    raise
+save_results(self, output_path: str) -> None
+Что делает:
+Сохраняет результаты в JSON файл
+pythonif not self.results:
+    raise ValueError("No results to save. Run analyze_project() first.")
+
+with open(output_path, 'w', encoding='utf-8') as f:
+    json.dump(self.results, f, indent=2, ensure_ascii=False)
+load_results(self, input_path: str) -> Dict[str, Any]
+Что делает:
+Загружает результаты из JSON файла
+pythonwith open(input_path, 'r', encoding='utf-8') as f:
+    self.results = json.load(f)
+return self.results
+
+7. ui/app.py
+Назначение: Flask веб-сервер для UI
+Импорты:
+pythonfrom flask import Flask, render_template, request, jsonify, send_from_directory
+from pathlib import Path
+import json
+import os
+import threading
+from typing import Dict
+from config import Config
+from main import ProjectAnalyzer
+Flask App Setup:
+pythonapp = Flask(__name__)
+app.config['SECRET_KEY'] = 'dev-secret-key-change-in-production'
+app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max upload
+
+# Хранилище для результатов анализа (в памяти)
+# В продакшене использовать Redis или БД
+analysis_results = {}
+analysis_progress = {}
+Роуты:
+GET /
+python@app.route('/')
+def index():
+    """Главная страница"""
+    return render_template('index.html', config={
+        'models': Config.AVAILABLE_MODELS,
+        'current_model': Config.LLM_MODEL
+    })
+POST /analyze
+python@app.route('/analyze', methods=['POST'])
+def analyze():
+    """
+    Принимает путь к проекту, запускает анализ в фоне
+    
+    Body: {
+        "project_path": "/path/to/project"
+    }
+    
+    Returns: {
+        "project_id": "abc123",
+        "status": "started"
+    }
+    """
+    data = request.json
+    project_path = data.get('project_path')
+    
+    if not project_path or not Path(project_path).exists():
+        return jsonify({'error': 'Invalid project path'}), 400
+    
+    # Генерируем ID для проекта
+    import uuid
+    project_id = str(uuid.uuid4())
+    
+    # Инициализируем прогресс
+    analysis_progress[project_id] = {
+        'status': 'running',
+        'message': 'Starting analysis...',
+        'progress': 0
+    }
+    
+    # Запускаем анализ в отдельном потоке
+    def run_analysis():
+        try:
+            analyzer = ProjectAnalyzer(Config)
+            
+            def progress_callback(message, progress):
+                analysis_progress[project_id] = {
+                    'status': 'running',
+                    'message': message,
+                    'progress': progress
+                }
+            
+            results = analyzer.analyze_project(project_path, progress_callback)
+            
+            # Сохраняем результаты
+            analysis_results[project_id] = results
+            analysis_progress[project_id] = {
+                'status': 'completed',
+                'message': 'Analysis complete!',
+                'progress': 100
+            }
+            
+        except Exception as e:
+            analysis_progress[project_id] = {
+                'status': 'error',
+                'message': str(e),
+                'progress': -1
+            }
+    
+    thread = threading.Thread(target=run_analysis)
+    thread.start()
+    
+    return jsonify({
+        'project_id': project_id,
+        'status': 'started'
+    })
+GET /progress/<project_id>
+python@app.route('/progress/<project_id>')
+def get_progress(project_id):
+    """
+    Возвращает текущий прогресс анализа
+    
+    Returns: {
+        "status": "running|completed|error",
+        "message": "Parsing project...",
+        "progress": 45
+    }
+    """
+    if project_id not in analysis_progress:
+        return jsonify({'error': 'Unknown project'}), 404
+    
+    return jsonify(analysis_progress[project_id])
+GET /results/<project_id>
+python@app.route('/results/<project_id>')
+def get_results(project_id):
+    """
+    Возвращает результаты анализа
+    
+    Returns: {
+        "graph": {...},
+        "file_tree": [...],
+        "issues": {...},
+        "stats": {...}
+    }
+    """
+    if project_id not in analysis_results:
+        return jsonify({'error': 'Results not found'}), 404
+    
+    return jsonify(analysis_results[project_id])
+GET /config
+python@app.route('/config')
+def get_config():
+    """
+    Возвращает текущую конфигурацию
+    
+    Returns: {
+        "model": "anthropic/claude-3-5-haiku",
+        "available_models": [...],
+        "api_key_set": true
+    }
+    """
+    return jsonify({
+        'model': Config.LLM_MODEL,
+        'available_models': Config.AVAILABLE_MODELS,
+        'api_key_set': bool(Config.OPENROUTER_API_KEY)
+    })
+POST /config/model
+python@app.route('/config/model', methods=['POST'])
+def update_model():
+    """
+    Обновляет модель LLM
+    
+    Body: {
+        "model": "openai/gpt-4o-mini"
+    }
+    """
+    data = request.json
+    new_model = data.get('model')
+    
+    if new_model not in Config.AVAILABLE_MODELS:
+        return jsonify({'error': 'Invalid model'}), 400
+    
+    Config.LLM_MODEL = new_model
+    return jsonify({'success': True, 'model': new_model})
+Main:
+pythonif __name__ == '__main__':
+    app.run(
+        host=Config.UI_HOST,
+        port=Config.UI_PORT,
+        debug=Config.DEBUG
+    )
+
+8. ui/templates/index.html
+Назначение: Главная страница UI
+HTML структура:
+html<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Project Analyzer</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+</head>
+<body>
+    <!-- Header -->
+    <header>
+        <h1>Project Analyzer</h1>
+        <button id="settingsBtn" class="settings-btn">⚙️ Settings</button>
+    </header>
+
+    <!-- Main Container -->
+    <div class="container">
+        <!-- Upload Section (показывается до анализа) -->
+        <div id="uploadSection" class="upload-section">
+            <div class="upload-zone" id="uploadZone">
+                <div class="upload-icon">📁</div>
+                <p>Drag & Drop project folder here</p>
+                <p class="or">or</p>
+                <input type="file" id="folderInput" webkitdirectory directory multiple style="display: none;">
+                <button id="browseBtn" class="btn-primary">Browse Folder</button>
+            </div>
+            
+            <div id="selectedPath" class="selected-path" style="display: none;">
+                <span id="pathText"></span>
+            </div>
+            
+            <button id="analyzeBtn" class="btn-analyze" style="display: none;">
+                Start Analysis
+            </button>
+        </div>
+
+        <!-- Progress Section (показывается во время анализа) -->
+        <div id="progressSection" class="progress-section" style="display: none;">
+            <h2>Analyzing Project...</h2>
+            <div class="progress-bar">
+                <div id="progressFill" class="progress-fill"></div>
+            </div>
+            <p id="progressMessage">Initializing...</p>
+            <p id="progressPercent">0%</p>
+        </div>
+
+        <!-- Results Section (показывается после анализа) -->
+        <div id="resultsSection" class="results-section" style="display: none;">
+            <!-- Stats Bar -->
+            <div class="stats-bar">
+                <div class="stat-item">
+                    <span class="stat-label">Files</span>
+                    <span class="stat-value" id="statFiles">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Functions</span>
+                    <span class="stat-value" id="statFunctions">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Classes</span>
+                    <span class="stat-value" id="statClasses">0</span>
+                </div>
+                <div class="stat-item error">
+                    <span class="stat-label">Errors</span>
+                    <span class="stat-value" id="statErrors">0</span>
+                </div>
+                <div class="stat-item warning">
+                    <span class="stat-label">Warnings</span>
+                    <span class="stat-value" id="statWarnings">0</span>
+                </div>
+            </div>
+
+            <!-- Main Content Area -->
+            <div class="main-content">
+                <!-- Left Panel: File Tree -->
+                <div class="left-panel">
+                    <h3>Project Files</h3>
+                    <div id="fileTree" class="file-tree"></div>
+                </div>
+
+                <!-- Center Panel: Graph -->
+                <div class="center-panel">
+                    <div class="graph-controls">
+                        <button id="zoomInBtn">🔍 +</button>
+                        <button id="zoomOutBtn">🔍 -</button>
+                        <button id="resetZoomBtn">⟲ Reset</button>
+                        <button id="fitBtn">⛶ Fit All</button>
+                    </div>
+                    <div id="graphContainer" class="graph-container"></div>
+                </div>
+
+                <!-- Right Panel: Issues -->
+                <div class="right-panel">
+                    <h3>Issues</h3>
+                    <div class="issues-tabs">
+                        <button class="tab-btn active" data-tab="errors">Errors <span id="errorCount" class="badge">0</span></button>
+                        <button class="tab-btn" data-tab="warnings">Warnings <span id="warningCount" class="badge">0</span></button>
+                        <button class="tab-btn" data-tab="info">Info <span id="infoCount" class="badge">0</span></button>
+                    </div>
+                    <div id="issuesList" class="issues-list"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Function Details -->
+    <div id="functionModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2 id="modalFunctionName"></h2>
+            <div class="modal-body">
+                <div class="modal-section">
+                    <h4>File</h4>
+                    <p id="modalFile"></p>
+                </div>
+                <div class="modal-section">
+                    <h4>Parameters</h4>
+                    <p id="modalParams"></p>
+                </div>
+                <div class="modal-section">
+                    <h4>Description</h4>
+                    <p id="modalDescription"></p>
+                </div>
+                <div class="modal-section">
+                    <h4>Code</h4>
+                    <pre id="modalCode"></pre>
+                </div>
+                <div class="modal-section">
+                    <h4>Dependencies</h4>
+                    <p id="modalCalls"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Settings -->
+    <div id="settingsModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Settings</h2>
+            <div class="modal-body">
+                <div class="setting-item">
+                    <label for="modelSelect">LLM Model</label>
+                    <select id="modelSelect">
+                        {% for model in config.models %}
+                        <option value="{{ model }}" {% if model == config.current_model %}selected{% endif %}>
+                            {{ model }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <button id="saveSettingsBtn" class="btn-primary">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/graph.js') }}"></script>
+</body>
+</html>
+
+9. ui/static/css/styles.css
+Назначение: Стили для UI (темная тема)
+css/* ===== БАЗОВЫЕ СТИЛИ ===== */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: #1a1a1a;
+    color: #e0e0e0;
+    overflow: hidden;
+}
+
+/* ===== HEADER ===== */
+header {
+    background: #252525;
+    padding: 1rem 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 2px solid #333;
+}
+
+header h1 {
+    font-size: 1.8rem;
+    color: #4CAF50;
+}
+
+.settings-btn {
+    background: transparent;
+    border: 1px solid #666;
+    color: #e0e0e0;
+    padding: 0.5rem 1rem;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 1rem;
+}
+
+.settings-btn:hover {
+    background: #333;
+}
+
+/* ===== CONTAINER ===== */
+.container {
+    height: calc(100vh - 80px);
+    padding: 2rem;
+}
+
+/* ===== UPLOAD SECTION ===== */
+.upload-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+}
+
+.upload-zone {
+    border: 3px dashed #666;
+    border-radius: 10px;
+    padding: 3rem;
+    text-align: center;
+    width: 500px;
+    background: #252525;
+    transition: all 0.3s;
+}
+
+.upload-zone:hover,
+.upload-zone.dragover {
+    border-color: #4CAF50;
+    background: #2a2a2a;
+}
+
+.upload-icon {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+}
+
+.upload-zone p {
+    margin: 0.5rem 0;
+    font-size: 1.1rem;
+}
+
+.or {
+    color: #888;
+    margin: 1rem 0;
+}
+
+.btn-primary {
+    background: #4CAF50;
+    color: white;
+    border: none;
+    padding: 0.8rem 2rem;
+    border-radius: 5px;
+    font-size: 1rem;
+    cursor: pointer;
+    margin-top: 1rem;
+}
+
+.btn-primary:hover {
+    background: #45a049;
+}
+
+.selected-path {
+    margin-top: 1.5rem;
+    padding: 1rem;
+    background: #2a2a2a;
+    border-radius: 5px;
+    max-width: 600px;
+    word-break: break-all;
+}
+
+.btn-analyze {
+    background: #2196F3;
+    color: white;
+    border: none;
+    padding: 1rem 3rem;
+    border-radius: 5px;
+    font-size: 1.2rem;
+    cursor: pointer;
+    margin-top: 1.5rem;
+}
+
+.btn-analyze:hover {
+    background: #1976D2;
+}
+
+/* ===== PROGRESS SECTION ===== */
+.progress-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+}
+
+.progress-section h2 {
+    margin-bottom: 2rem;
+    color: #4CAF50;
+}
+
+.progress-bar {
+    width: 600px;
+    height: 30px;
+    background: #333;
+    border-radius: 15px;
+    overflow: hidden;
+    margin-bottom: 1rem;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #4CAF50, #2196F3);
+    width: 0%;
+    transition: width 0.5s;
+}
+
+#progressMessage {
+    font-size: 1.1rem;
+    margin: 0.5rem 0;
+}
+
+#progressPercent {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: #4CAF50;
+}
+
+/* ===== RESULTS SECTION ===== */
+.results-section {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Stats Bar */
+.stats-bar {
+    display: flex;
+    gap: 1rem;
+    padding: 1rem;
+    background: #252525;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+}
+
+.stat-item {
+    flex: 1;
+    text-align: center;
+    padding: 1rem;
+    background: #2a2a2a;
+    border-radius: 5px;
+}
+
+.stat-label {
+    display: block;
+    font-size: 0.9rem;
+    color: #888;
+    margin-bottom: 0.5rem;
+}
+
+.stat-value {
+    display: block;
+    font-size: 1.8rem;
+    font-weight: bold;
+    color: #4CAF50;
+}
+
+.stat-item.error .stat-value {
+    color: #F44336;
+}
+
+.stat-item.warning .stat-value {
+    color: #FF9800;
+}
+
+/* Main Content */
+.main-content {
+    display: flex;
+    gap: 1rem;
+    flex: 1;
+    overflow: hidden;
+}
+
+/* Panels */
+.left-panel,
+.right-panel {
+    width: 250px;
+    background: #252525;
+    border-radius: 8px;
+    padding: 1rem;
+    overflow-y: auto;
+}
+
+.center-panel {
+    flex: 1;
+    background: #252525;
+    border-radius: 8px;
+    position: relative;
+}
+
+/* File Tree */
+.file-tree {
+    margin-top: 1rem;
+}
+
+.tree-item {
+    padding: 0.5rem;
+    cursor: pointer;
+    border-radius: 3px;
+}
+
+.tree-item:hover {
+    background: #333;
+}
+
+.tree-folder {
+    font-weight: bold;
+    color: #2196F3;
+}
+
+.tree-file {
+    color: #e0e0e0;
+    padding-left: 1.5rem;
+}
+
+/* Graph Container */
+.graph-container {
+    width: 100%;
+    height: 100%;
+    border-radius: 8px;
+}
+
+.graph-controls {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    z-index: 10;
+    display: flex;
+    gap: 0.5rem;
+}
+
+.graph-controls button {
+    background: #333;
+    border: 1px solid #666;
+    color: #e0e0e0;
+    padding: 0.5rem;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+.graph-controls button:hover {
+    background: #444;
+}
+
+/* Issues Panel */
+.issues-tabs {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.tab-btn {
+    flex: 1;
+    background: #2a2a2a;
+    border: none;
+    color: #e0e0e0;
+    padding: 0.7rem;
+    border-radius: 5px;
+    cursor: pointer;
+    position: relative;
+}
+
+.tab-btn.active {
+    background: #4CAF50;
+    color: white;
+}
+
+.badge {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    background: #F44336;
+    color: white;
+    border-radius: 50%;
+    padding: 2px 6px;
+    font-size: 0.7rem;
+}
+
+.issues-list {
+    max-height: calc(100vh - 300px);
+    overflow-y: auto;
+}
+
+.issue-item {
+    padding: 0.8rem;
+    margin-bottom: 0.5rem;
+    background: #2a2a2a;
+    border-left: 3px solid #666;
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+.issue-item:hover {
+    background: #333;
+}
+
+.issue-item.error {
+    border-left-color: #F44336;
+}
+
+.issue-item.warning {
+    border-left-color: #FF9800;
+}
+
+.issue-item.info {
+    border-left-color: #2196F3;
+}
+
+.issue-title {
+    font-weight: bold;
+    margin-bottom: 0.3rem;
+}
+
+.issue-location {
+    font-size: 0.85rem;
+    color: #888;
+}
+
+/* ===== MODAL ===== */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+}
+
+.modal-content {
+    background: #252525;
+    margin: 5% auto;
+    padding: 2rem;
+    border-radius: 10px;
+    width: 80%;
+    max-width: 900px;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+.close {
+    color: #aaa;
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.close:hover {
+    color: #fff;
+}
+
+.modal-body {
+    margin-top: 1rem;
+}
+
+.modal-section {
+    margin-bottom: 1.5rem;
+}
+
+.modal-section h4 {
+    color: #4CAF50;
+    margin-bottom: 0.5rem;
+}
+
+.modal-section pre {
+    background: #1a1a1a;
+    padding: 1rem;
+    border-radius: 5px;
+    overflow-x: auto;
+    color: #e0e0e0;
+}
+
+/* ===== SCROLLBAR ===== */
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #1a1a1a;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #666;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #888;
+}
+
+10. ui/static/js/graph.js
+Назначение: JavaScript для интерактивного графа и UI логики
+javascript// ===== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ =====
+let currentProjectId = null;
+let graphNetwork = null;
+let allResults = null;
+
+// ===== ИНИЦИАЛИЗАЦИЯ =====
+document.addEventListener('DOMContentLoaded', function() {
+    initUploadHandlers();
+    initModalHandlers();
+    initSettingsHandlers();
+});
+
+// ===== UPLOAD HANDLERS =====
+function initUploadHandlers() {
+    const uploadZone = document.getElementById('uploadZone');
+    const folderInput = document.getElementById('folderInput');
+    const browseBtn = document.getElementById('browseBtn');
+    const analyzeBtn = document.getElementById('analyzeBtn');
+
+    // Browse button
+    browseBtn.addEventListener('click', () => {
+        folderInput.click();
+    });
+
+    // Folder selection
+    folderInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+            const path = e.target.files[0].webkitRelativePath.split('/')[0];
+            showSelectedPath(path);
+        }
+    });
+
+    // Drag & Drop
+    uploadZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        uploadZone.classList.add('dragover');
+    });
+
+    uploadZone.addEventListener('dragleave', () => {
+        uploadZone.classList.remove('dragover');
+    });
+
+    uploadZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        uploadZone.classList.remove('dragover');
+        
+        const items = e.dataTransfer.items;
+        if (items && items.length > 0) {
+            const item = items[0].webkitGetAsEntry();
+            if (item && item.isDirectory) {
+                showSelectedPath(item.fullPath);
+            }
+        }
+    });
+
+    // Analyze button
+    analyzeBtn.addEventListener('click', () => {
+        const pathText = document.getElementById('pathText').textContent;
+        startAnalysis(pathText);
+    });
+}
+
+function showSelectedPath(path) {
+    document.getElementById('pathText').textContent = path;
+    document.getElementById('selectedPath').style.display = 'block';
+    document.getElementById('analyzeBtn').style.display = 'block';
+}
+
+// ===== ANALYSIS =====
+function startAnalysis(projectPath) {
+    // Показываем progress section
+    document.getElementById('uploadSection').style.display = 'none';
+    document.getElementById('progressSection').style.display = 'flex';
+
+    // Отправляем запрос на анализ
+    fetch('/analyze', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ project_path: projectPath })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.project_id) {
+            currentProjectId = data.project_id;
+            pollProgress(data.project_id);
+        } else {
+            showError('Failed to start analysis');
+        }
+    })
+    .catch(error => {
+        showError('Error: ' + error.message);
+    });
+}
+
+function pollProgress(projectId) {
+    const interval = setInterval(() => {
+        fetch(`/progress/${projectId}`)
+        .then(response => response.json())
+        .then(data => {
+            updateProgress(data);
+
+            if (data.status === 'completed') {
+                clearInterval(interval);
+                loadResults(projectId);
+            } else if (data.status === 'error') {
+                clearInterval(interval);
+                showError(data.message);
+            }
+        })
+        .catch(error => {
+            clearInterval(interval);
+            showError('Error polling progress: ' + error.message);
+        });
+    }, 500); // Каждые 500ms
+}
+
+function updateProgress(data) {
+    document.getElementById('progressFill').style.width = data.progress + '%';
+    document.getElementById('progressMessage').textContent = data.message;
+    document.getElementById('progressPercent').textContent = Math.round(data.progress) + '%';
+}
+
+function loadResults(projectId) {
+    fetch(`/results/${projectId}`)
+    .then(response => response.json())
+    .then(data => {
+        allResults = data;
+        showResults(data);
+    })
+    .catch(error => {
+        showError('Error loading results: ' + error.message);
+    });
+}
+
+// ===== RESULTS DISPLAY =====
+function showResults(data) {
+    // Скрываем progress, показываем results
+    document.getElementById('progressSection').style.display = 'none';
+    document.getElementById('resultsSection').style.display = 'block';
+
+    // Обновляем stats
+    updateStats(data.stats);
+
+    // Рендерим компоненты
+    renderFileTree(data.file_tree);
+    renderGraph(data.graph);
+    renderIssues(data.issues);
+}
+
+function updateStats(stats) {
+    document.getElementById('statFiles').textContent = stats.total_files;
+    document.getElementById('statFunctions').textContent = stats.total_functions;
+    document.getElementById('statClasses').textContent = stats.total_classes;
+    document.getElementById('statErrors').textContent = stats.errors;
+    document.getElementById('statWarnings').textContent = stats.warnings;
+    
+    // Обновляем badges
+    document.getElementById('errorCount').textContent = stats.errors;
+    document.getElementById('warningCount').textContent = stats.warnings;
+    document.getElementById('infoCount').textContent = stats.total_issues - stats.errors - stats.warnings;
+}
+
+// ===== FILE TREE =====
+function renderFileTree(tree) {
+    const container = document.getElementById('fileTree');
+    container.innerHTML = '';
+
+    function createTreeNode(item, level = 0) {
+        const div = document.createElement('div');
+        div.className = item.type === 'folder' ? 'tree-folder tree-item' : 'tree-file tree-item';
+        div.style.paddingLeft = (level * 15) + 'px';
+        div.textContent = item.type === 'folder' ? '📁 ' + item.name : '📄 ' + item.name;
+        
+        if (item.type === 'file') {
+            div.addEventListener('click', () => {
+                filterGraphByFile(item.path);
+            });
+        }
+
+        container.appendChild(div);
+
+        if (item.children && item.children.length > 0) {
+            item.children.forEach(child => createTreeNode(child, level + 1));
+        }
+    }
+
+    tree.forEach(item => createTreeNode(item));
+}
+
+// ===== GRAPH =====
+function renderGraph(graphData) {
+    const container = document.getElementById('graphContainer');
+
+    // vis.js options
+    const options = {
+        nodes: {
+            shape: 'box',
+            font: {
+                color: '#ffffff',
+                size: 14
+            },
+            borderWidth: 2,
+            shadow: true
+        },
+        edges: {
+            arrows: 'to',
+            color: {
+                color: '#666666',
+                highlight: '#4CAF50'
+            },
+            smooth: {
+                type: 'cubicBezier'
+            }
+        },
+        physics: {
+            enabled: true,
+            barnesHut: {
+                gravitationalConstant: -2000,
+                springLength: 150,
+                springConstant: 0.04
+            }
+        },
+        interaction: {
+            hover: true,
+            tooltipDelay: 100
+        }
+    };
+
+    // Создаем граф
+    const nodes = new vis.DataSet(graphData.nodes);
+    const edges = new vis.DataSet(graphData.edges);
+    
+    const data = { nodes, edges };
+    graphNetwork = new vis.Network(container, data, options);
+
+    // Event handlers
+    graphNetwork.on('click', function(params) {
+        if (params.nodes.length > 0) {
+            const nodeId = params.nodes[0];
+            showFunctionDetails(nodeId);
+        }
+    });
+
+    graphNetwork.on('hoverNode', function(params) {
+        const nodeId = params.node;
+        highlightConnections(nodeId);
+    });
+
+    // Graph controls
+    document.getElementById('zoomInBtn').addEventListener('click', () => {
+        graphNetwork.moveTo({ scale: graphNetwork.getScale() * 1.2 });
+    });
+
+    document.getElementById('zoomOutBtn').addEventListener('click', () => {
+        graphNetwork.moveTo({ scale: graphNetwork.getScale() * 0.8 });
+    });
+
+    document.getElementById('resetZoomBtn').addEventListener('click', () => {
+        graphNetwork.moveTo({ scale: 1 });
+    });
+
+    document.getElementById('fitBtn').addEventListener('click', () => {
+        graphNetwork.fit();
+    });
+}
+
+function highlightConnections(nodeId) {
+    const connectedNodes = graphNetwork.getConnectedNodes(nodeId);
+    const connectedEdges = graphNetwork.getConnectedEdges(nodeId);
+
+    // Подсвечиваем связанные ноды
+    graphNetwork.selectNodes(connectedNodes);
+}
+
+function filterGraphByFile(filePath) {
+    // Фильтруем граф по файлу
+    const nodes = allResults.graph.nodes.filter(n => n.data.file === filePath);
+    const nodeIds = nodes.map(n => n.id);
+    
+    graphNetwork.selectNodes(nodeIds);
+    graphNetwork.fit({
+        nodes: nodeIds,
+        animation: true
+    });
+}
+
+// ===== ISSUES =====
+function renderIssues(issues) {
+    const tabs = document.querySelectorAll('.tab-btn');
+    const issuesList = document.getElementById('issuesList');
+
+    // Tab switching
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            tabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            
+            const category = tab.dataset.tab;
+            renderIssueCategory(issues[category], issuesList);
+        });
+    });
+
+    // Изначально показываем errors
+    renderIssueCategory(issues.errors, issuesList);
+}
+
+function renderIssueCategory(issueList, container) {
+    container.innerHTML = '';
+
+    if (issueList.length === 0) {
+        container.innerHTML = '<p style="text-align: center; color: #888;">No issues found</p>';
+        return;
+    }
+
+    issueList.forEach(issue => {
+        const div = document.createElement('div');
+        div.className = `issue-item ${issue.severity}`;
+        
+        div.innerHTML = `
+            <div class="issue-title">${issue.type.replace('_', ' ').toUpperCase()}</div>
+            <div>${issue.message}</div>
+            <div class="issue-location">${issue.file}:${issue.line}</div>
+        `;
+
+        div.addEventListener('click', () => {
+            if (issue.function) {
+                showFunctionDetails(issue.function);
+            }
+        });
+
+        container.appendChild(div);
+    });
+}
+
+// ===== FUNCTION DETAILS MODAL =====
+function initModalHandlers() {
+    const modal = document.getElementById('functionModal');
+    const closeBtn = modal.querySelector('.close');
+
+    closeBtn.addEventListener('click', () => {
+        modal.style.display = 'none';
+    });
+
+    window.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.style.display = 'none';
+        }
+    });
+}
+
+function showFunctionDetails(functionName) {
+    const func = allResults.graph.nodes.find(n => n.id === functionName);
+    
+    if (!func) return;
+
+    const modal = document.getElementById('functionModal');
+    
+    document.getElementById('modalFunctionName').textContent = func.label;
+    document.getElementById('modalFile').textContent = func.data.file + ':' + func.data.line;
+    document.getElementById('modalParams').textContent = func.data.params.join(', ') || 'None';
+    document.getElementById('modalDescription').textContent = func.data.description;
+    document.getElementById('modalCode').textContent = func.data.code;
+    
+    const calls = allResults.graph.edges
+        .filter(e => e.from === functionName)
+        .map(e => e.to);
+    document.getElementById('modalCalls').textContent = calls.join(', ') || 'None';
+
+    modal.style.display = 'block';
+}
+
+// ===== SETTINGS MODAL =====
+function initSettingsHandlers() {
+    const modal = document.getElementById('settingsModal');
+    const settingsBtn = document.getElementById('settingsBtn');
+    const closeBtn = modal.querySelector('.close');
+    const saveBtn = document.getElementById('saveSettingsBtn');
+
+    settingsBtn.addEventListener('click', () => {
+        modal.style.display = 'block';
+    });
+
+    closeBtn.addEventListener('click', () => {
+        modal.style.display = 'none';
+    });
+
+    saveBtn.addEventListener('click', () => {
+        const newModel = document.getElementById('modelSelect').value;
+        
+        fetch('/config/model', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ model: newModel })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('Model updated successfully!');
+                modal.style.display = 'none';
+            }
+        })
+        .catch(error => {
+            alert('Error updating model: ' + error.message);
+        });
+    });
+}
+
+// ===== ERROR HANDLING =====
+function showError(message) {
+    alert('Error: ' + message);
+    location.reload();
+}
+```
+
+---
+
+## 11. requirements.txt
+**Назначение:** Зависимости Python
+```
+Flask==3.0.0
+requests==2.31.0
+python-dotenv==1.0.0
+networkx==3.2.1
+```
+
+---
+
+## 12. .env
+**Назначение:** Переменные окружения (не коммитить в git!)
+```
+# OpenRouter API Key
+OPENROUTER_API_KEY=your_key_here
+
+# LLM Model (optional, can be changed in UI)
+LLM_MODEL=anthropic/claude-3-5-haiku-20241022
+
+13. README.md
+Назначение: Документация проекта
+markdown# Project Analyzer
+
+Инструмент для анализа кодовых проектов с визуализацией зависимостей и автоматической генерацией описаний через LLM.
+
+## Установка
+```bash
+pip install -r requirements.txt
+```
+
+## Настройка
+
+1. Создайте файл `.env` в корне проекта
+2. Добавьте ваш OpenRouter API ключ:
+```
+OPENROUTER_API_KEY=sk-or-v1-...
+```
+
+## Запуск
+```bash
+python ui/app.py
+```
+
+Откройте браузер: `http://localhost:8000`
+
+## Использование
+
+1. Перетащите папку проекта в Upload Zone
+2. Нажмите "Start Analysis"
+3. Дождитесь завершения (2-3 минуты)
+4. Изучайте граф зависимостей, проблемы, описания функций
+
+## Возможности
+
+- ✅ Парсинг Python/JS/TS проектов
+- ✅ Граф зависимостей функций
+- ✅ Детектирование проблем (мертвый код, обрывы логики, заглушки)
+- ✅ LLM-описания функций (что делает и КАК)
+- ✅ Интерактивная визуализация
+- ✅ Смена LLM модели в настройках
+
+## Технологии
+
+- Python + Flask
+- vis.js (граф)
+- OpenRouter API (LLM)
+- NetworkX (анализ зависимостей)

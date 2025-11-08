@@ -9,7 +9,7 @@ body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     background: #1a1a1a;
     color: #e0e0e0;
-    overflow: hidden;
+    overflow-y: auto; /* Разрешаем скролл всей страницы */
 }
 
 /* ===== HEADER ===== */
@@ -43,8 +43,10 @@ header h1 {
 
 /* ===== CONTAINER ===== */
 .container {
-    height: calc(100vh - 80px);
-    padding: 2rem;
+    min-height: calc(100vh - 80px); /* Минимальная высота, но может расти */
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
 }
 
 /* ===== UPLOAD SECTION ===== */
@@ -192,7 +194,7 @@ header h1 {
 
 /* ===== RESULTS SECTION ===== */
 .results-section {
-    height: 100%;
+    min-height: calc(100vh - 200px); /* Минимальная высота, но может расти */
     display: flex;
     flex-direction: column;
 }
@@ -241,27 +243,26 @@ header h1 {
 .main-content {
     display: flex;
     gap: 1rem;
-    flex: 1;
-    overflow: hidden;
-    min-height: 0; /* Важно для flex детей с overflow */
+    min-height: 600px; /* Минимальная высота, но может расти */
 }
 
 /* Panels */
 .left-panel,
 .right-panel {
-    width: 250px;
+    width: 200px; /* Уменьшил с 250px */
     background: #252525;
     border-radius: 8px;
     padding: 1rem;
     overflow-y: auto;
+    flex-shrink: 0; /* Не сжимаются */
 }
 
 .center-panel {
-    flex: 1;
+    flex: 1; /* Занимает всё оставшееся пространство */
     background: #252525;
     border-radius: 8px;
     position: relative;
-    min-height: 600px; /* Минимальная высота для графа */
+    min-height: 600px;
     display: flex;
     flex-direction: column;
 }
@@ -298,8 +299,7 @@ header h1 {
     flex: 1; /* Занимает всё доступное пространство */
     border-radius: 8px;
     min-height: 500px; /* Минимальная высота для vis.js */
-    background: #2a2a2a; /* Тёмный фон, чтобы видеть контейнер */
-    border: 2px solid #4CAF50; /* Зелёная рамка для отладки */
+    background: #2a2a2a; /* Тёмный фон */
 }
 
 .graph-controls {
@@ -492,4 +492,262 @@ header h1 {
 
 ::-webkit-scrollbar-thumb:hover {
     background: #888;
+}
+
+/* ===== VIEW TABS ===== */
+.view-tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 1rem;
+    border-bottom: 2px solid #333;
+}
+
+.view-tab {
+    background: transparent;
+    border: none;
+    color: #888;
+    padding: 1rem 2rem;
+    font-size: 1.1rem;
+    cursor: pointer;
+    border-bottom: 3px solid transparent;
+    transition: all 0.3s;
+}
+
+.view-tab:hover {
+    color: #e0e0e0;
+    background: #2a2a2a;
+}
+
+.view-tab.active {
+    color: #4CAF50;
+    border-bottom-color: #4CAF50;
+}
+
+/* ===== CONTENT VIEWS ===== */
+.content-view {
+    display: none;
+    min-height: 600px; /* Минимальная высота, может расти */
+}
+
+.content-view.active {
+    display: flex;
+}
+
+/* ===== FUNCTIONS VIEW ===== */
+#functionsView {
+    gap: 1rem;
+    display: flex;
+    min-height: 600px; /* Минимальная высота, может расти */
+}
+
+.functions-left-panel {
+    width: 300px;
+    background: #252525;
+    border-radius: 8px;
+    padding: 1rem;
+    overflow-y: auto;
+    flex-shrink: 0;
+    max-height: 80vh; /* Максимальная высота для скролла */
+}
+
+.functions-left-panel h3 {
+    margin-bottom: 1rem;
+    color: #4CAF50;
+}
+
+.functions-file-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.function-file-item {
+    background: #2a2a2a;
+    padding: 1rem;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all 0.2s;
+    border-left: 3px solid #666;
+}
+
+.function-file-item:hover {
+    background: #333;
+    border-left-color: #4CAF50;
+}
+
+.function-file-item.active {
+    background: #333;
+    border-left-color: #4CAF50;
+}
+
+.function-file-name {
+    font-weight: bold;
+    color: #e0e0e0;
+    margin-bottom: 0.3rem;
+}
+
+.function-file-count {
+    font-size: 0.9rem;
+    color: #888;
+}
+
+.functions-right-panel {
+    flex: 1;
+    background: #252525;
+    border-radius: 8px;
+    padding: 1.5rem;
+    overflow-y: visible; /* Убираем скролл - пусть страница скроллится */
+    min-width: 0;
+}
+
+.function-details-panel {
+    /* Убираем min-height чтобы контент мог расти */
+}
+
+.function-card {
+    background: #2a2a2a;
+    border-radius: 8px;
+    padding: 1rem; /* Уменьшил с 1.5rem */
+    margin-bottom: 1rem; /* Уменьшил с 1.5rem */
+    border-left: 4px solid #4CAF50;
+}
+
+.function-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid #333;
+    padding-bottom: 0.5rem;
+}
+
+.function-card-name {
+    font-size: 1.3rem;
+    font-weight: bold;
+    color: #4CAF50;
+    font-family: 'Courier New', monospace;
+}
+
+.function-card-line {
+    color: #888;
+    font-size: 0.9rem;
+}
+
+.function-card-section {
+    margin-bottom: 0.75rem; /* Уменьшил с 1rem */
+}
+
+.function-card-section h4 {
+    color: #4CAF50;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+}
+
+.function-card-description {
+    color: #e0e0e0;
+    line-height: 1.6;
+    background: #1a1a1a;
+    padding: 1rem;
+    border-radius: 5px;
+    border-left: 3px solid #4CAF50;
+}
+
+.function-card-params {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.param-badge {
+    background: #1a1a1a;
+    color: #4CAF50;
+    padding: 0.3rem 0.8rem;
+    border-radius: 15px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.9rem;
+    border: 1px solid #333;
+}
+
+.function-card-code {
+    background: #1a1a1a;
+    padding: 1rem;
+    border-radius: 5px;
+    overflow-x: auto;
+    max-height: 150px; /* Уменьшил с 300px до 150px */
+    overflow-y: auto;
+}
+
+.function-card-code pre {
+    margin: 0;
+    color: #e0e0e0;
+    font-family: 'Courier New', monospace;
+    font-size: 0.9rem;
+    line-height: 1.5;
+}
+
+.function-card-calls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.call-badge {
+    background: #1a1a1a;
+    color: #64B5F6;
+    padding: 0.3rem 0.8rem;
+    border-radius: 15px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.9rem;
+    border: 1px solid #333;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.call-badge:hover {
+    background: #333;
+    border-color: #64B5F6;
+}
+
+/* ===== GRAPH VIEW SPECIFIC ===== */
+#graphView {
+    display: flex;
+    gap: 1rem;
+    flex: 1;
+    overflow: hidden;
+    min-height: 0;
+}
+
+#graphView .left-panel,
+#graphView .right-panel {
+    width: 200px;
+    flex-shrink: 0;
+}
+
+#graphView .center-panel {
+    flex: 1;
+    min-width: 0;
+}
+
+/* ===== CUSTOM SCROLLBAR ===== */
+.functions-right-panel::-webkit-scrollbar,
+.functions-left-panel::-webkit-scrollbar {
+    width: 12px;
+}
+
+.functions-right-panel::-webkit-scrollbar-track,
+.functions-left-panel::-webkit-scrollbar-track {
+    background: #1a1a1a;
+    border-radius: 10px;
+}
+
+.functions-right-panel::-webkit-scrollbar-thumb,
+.functions-left-panel::-webkit-scrollbar-thumb {
+    background: #4CAF50;
+    border-radius: 10px;
+}
+
+.functions-right-panel::-webkit-scrollbar-thumb:hover,
+.functions-left-panel::-webkit-scrollbar-thumb:hover {
+    background: #66BB6A;
 }

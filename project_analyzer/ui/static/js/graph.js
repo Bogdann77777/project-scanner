@@ -60,7 +60,9 @@ document.addEventListener('DOMContentLoaded', function() {
     showDebug('[6/10] Settings handlers OK');
     initExportHandler();
     showDebug('[7/10] Export handler OK');
-    showDebug('[8/10] ✓ ALL INITIALIZED - Ready for analysis!');
+    initViewTabs();
+    showDebug('[8/10] View tabs OK');
+    showDebug('[9/10] ✓ ALL INITIALIZED - Ready for analysis!');
 });
 
 // ===== UPLOAD HANDLERS =====
@@ -495,15 +497,11 @@ function renderGraphInternal(container, graphData) {
             showDebug('');
             showDebug('✓✓✓ CANVAS FOUND! ✓✓✓');
             showDebug('Canvas size: ' + canvas.width + 'x' + canvas.height + ' px');
-            showDebug('Canvas display: ' + canvas.style.display);
-            showDebug('Canvas visibility: ' + canvas.style.visibility);
-            showDebug('Canvas position: ' + canvas.style.position);
             // Делаем canvas видимым принудительно
             canvas.style.display = 'block';
             canvas.style.visibility = 'visible';
             canvas.style.position = 'relative';
-            canvas.style.border = '3px solid red'; // Красная рамка для отладки
-            showDebug('✓ Canvas forced visible with RED BORDER');
+            showDebug('✓ Canvas forced visible');
         } else {
             showDebug('');
             showDebug('❌❌❌ CANVAS NOT FOUND! ❌❌❌');
@@ -763,4 +761,171 @@ function initExportHandler() {
 
         console.log('Results exported successfully');
     });
+}
+
+// ===== VIEW TABS =====
+function initViewTabs() {
+    const tabs = document.querySelectorAll('.view-tab');
+    
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            const viewName = tab.dataset.view;
+            switchView(viewName);
+            
+            // Update active tab
+            tabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+        });
+    });
+}
+
+function switchView(viewName) {
+    // Hide all views
+    document.querySelectorAll('.content-view').forEach(view => {
+        view.classList.remove('active');
+        view.style.display = 'none';
+    });
+    
+    // Show selected view
+    if (viewName === 'graph') {
+        const graphView = document.getElementById('graphView');
+        graphView.classList.add('active');
+        graphView.style.display = 'flex';
+    } else if (viewName === 'functions') {
+        const functionsView = document.getElementById('functionsView');
+        functionsView.classList.add('active');
+        functionsView.style.display = 'flex';
+        
+        // Render functions view if not already rendered
+        if (!functionsView.dataset.rendered) {
+            renderFunctionsView();
+            functionsView.dataset.rendered = 'true';
+        }
+    }
+}
+
+// ===== FUNCTIONS VIEW =====
+function renderFunctionsView() {
+    if (!allResults) return;
+    
+    const fileList = document.getElementById('functionsFileList');
+    fileList.innerHTML = '';
+    
+    // Group functions by file
+    const fileMap = {};
+    allResults.graph.nodes.forEach(node => {
+        const file = node.data.file;
+        if (!fileMap[file]) {
+            fileMap[file] = [];
+        }
+        fileMap[file].push(node);
+    });
+    
+    // Create file items
+    Object.keys(fileMap).sort().forEach(file => {
+        const functions = fileMap[file];
+        const fileItem = document.createElement('div');
+        fileItem.className = 'function-file-item';
+        
+        fileItem.innerHTML = `
+            <div class="function-file-name">📄 ${file}</div>
+            <div class="function-file-count">${functions.length} function${functions.length > 1 ? 's' : ''}</div>
+        `;
+        
+        fileItem.addEventListener('click', () => {
+            // Update active state
+            document.querySelectorAll('.function-file-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            fileItem.classList.add('active');
+            
+            // Show functions for this file
+            showFileFunctions(file, functions);
+        });
+        
+        fileList.appendChild(fileItem);
+    });
+}
+
+function showFileFunctions(fileName, functions) {
+    const panel = document.getElementById('functionDetailsPanel');
+    panel.innerHTML = `<h2 style="color: #4CAF50; margin-bottom: 1.5rem;">📄 ${fileName}</h2>`;
+    
+    // Sort functions by line number
+    functions.sort((a, b) => a.data.line - b.data.line);
+    
+    functions.forEach(func => {
+        const card = document.createElement('div');
+        card.className = 'function-card';
+        
+        // Get calls TO this function
+        const callsTo = allResults.graph.edges
+            .filter(e => e.to === func.id)
+            .map(e => {
+                const parts = e.from.split(':');
+                return parts[parts.length - 1];
+            });
+        
+        // Get calls FROM this function
+        const callsFrom = allResults.graph.edges
+            .filter(e => e.from === func.id)
+            .map(e => {
+                const parts = e.to.split(':');
+                return parts[parts.length - 1];
+            });
+        
+        card.innerHTML = `
+            <div class="function-card-header">
+                <div class="function-card-name">${func.label}()</div>
+                <div class="function-card-line">Line ${func.data.line}</div>
+            </div>
+            
+            <div class="function-card-section">
+                <h4>📝 Description</h4>
+                <div class="function-card-description">${func.data.description || 'No description available'}</div>
+            </div>
+            
+            ${func.data.params && func.data.params.length > 0 ? `
+            <div class="function-card-section">
+                <h4>🔧 Parameters</h4>
+                <div class="function-card-params">
+                    ${func.data.params.map(p => `<span class="param-badge">${p}</span>`).join('')}
+                </div>
+            </div>
+            ` : ''}
+            
+            ${callsTo.length > 0 ? `
+            <div class="function-card-section">
+                <h4>⬅️ Called By</h4>
+                <div class="function-card-calls">
+                    ${callsTo.map(c => `<span class="call-badge">${c}</span>`).join('')}
+                </div>
+            </div>
+            ` : ''}
+            
+            ${callsFrom.length > 0 ? `
+            <div class="function-card-section">
+                <h4>➡️ Calls</h4>
+                <div class="function-card-calls">
+                    ${callsFrom.map(c => `<span class="call-badge">${c}</span>`).join('')}
+                </div>
+            </div>
+            ` : ''}
+            
+            <div class="function-card-section">
+                <h4>💻 Source Code</h4>
+                <div class="function-card-code">
+                    <pre>${escapeHtml(func.data.code)}</pre>
+                </div>
+            </div>
+        `;
+        
+        panel.appendChild(card);
+    });
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
