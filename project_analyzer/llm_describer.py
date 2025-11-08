@@ -224,10 +224,10 @@ class FunctionDescriber:
 
             logger.info(f"  Batch {batch_num} complete. Total described so far: {len(described)}/{total}")
 
-            # Небольшая задержка между батчами (rate limiting)
+            # Увеличенная задержка между батчами (rate limiting protection)
             if i + batch_size < total:
-                logger.info(f"  Waiting 1s before next batch...")
-                time.sleep(1)
+                logger.info(f"  Waiting 3s before next batch...")
+                time.sleep(3)  # Увеличил с 1s до 3s
 
         logger.info(f"  All batches complete! Total functions described: {len(described)}")
 

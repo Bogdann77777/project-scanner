@@ -636,9 +636,31 @@ function renderIssueCategory(issueList, container) {
 
         div.addEventListener('click', () => {
             if (issue.function && issue.file) {
+                // Переключаемся на вкладку Graph
+                switchView('graph');
+                document.querySelectorAll('.view-tab').forEach(tab => {
+                    tab.classList.remove('active');
+                    if (tab.dataset.view === 'graph') {
+                        tab.classList.add('active');
+                    }
+                });
+                
                 // Создаем полный ID: file:function
                 const nodeId = `${issue.file}:${issue.function}`;
-                showFunctionDetails(nodeId);
+                
+                // Подсвечиваем узел в графе
+                if (graphNetwork) {
+                    graphNetwork.selectNodes([nodeId]);
+                    graphNetwork.focus(nodeId, {
+                        scale: 1.5,
+                        animation: true
+                    });
+                }
+                
+                // Показываем детали функции
+                setTimeout(() => {
+                    showFunctionDetails(nodeId);
+                }, 500);
             }
         });
 
@@ -683,6 +705,38 @@ function showFunctionDetails(nodeId) {
             return parts[parts.length - 1];
         });
     document.getElementById('modalCalls').textContent = calls.join(', ') || 'None';
+    
+    // НОВОЕ: Показываем issues для этой функции
+    const functionIssues = [];
+    ['errors', 'warnings', 'info'].forEach(severity => {
+        if (allResults.issues[severity]) {
+            allResults.issues[severity].forEach(issue => {
+                if (issue.file === func.data.file && issue.function === func.label) {
+                    functionIssues.push({...issue, severity});
+                }
+            });
+        }
+    });
+    
+    // Добавляем секцию Issues в модальное окно
+    let issuesHtml = '';
+    if (functionIssues.length > 0) {
+        issuesHtml = '<div class="modal-section"><h4>⚠️ Issues</h4><div style="margin-top: 0.5rem;">';
+        functionIssues.forEach(issue => {
+            const color = issue.severity === 'errors' ? '#F44336' : (issue.severity === 'warnings' ? '#FF9800' : '#2196F3');
+            issuesHtml += `<div style="background: rgba(255,255,255,0.05); padding: 0.5rem; margin-bottom: 0.5rem; border-left: 3px solid ${color}; border-radius: 3px;">`;
+            issuesHtml += `<strong style="color: ${color};">${issue.type.replace('_', ' ').toUpperCase()}</strong><br>`;
+            issuesHtml += `${issue.message}`;
+            issuesHtml += `</div>`;
+        });
+        issuesHtml += '</div></div>';
+        
+        // Вставляем перед Code секцией
+        const codeSection = modal.querySelector('.modal-body').children[3];
+        if (codeSection) {
+            codeSection.insertAdjacentHTML('beforebegin', issuesHtml);
+        }
+    }
 
     modal.style.display = 'block';
 }

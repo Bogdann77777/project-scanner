@@ -5,6 +5,43 @@ import networkx as nx
 
 class CodeAnalyzer:
     """Анализатор кода - находит проблемы: мертвый код, обрывы, заглушки"""
+    
+    # Белый список встроенных функций и популярных методов Python
+    BUILTINS = {
+        # Встроенные функции Python
+        'print', 'len', 'range', 'str', 'int', 'float', 'list', 'dict', 'set', 'tuple',
+        'open', 'input', 'type', 'isinstance', 'issubclass', 'hasattr', 'getattr', 'setattr',
+        'delattr', 'dir', 'vars', 'help', 'min', 'max', 'sum', 'abs', 'round', 'sorted',
+        'reversed', 'enumerate', 'zip', 'map', 'filter', 'all', 'any', 'next', 'iter',
+        'callable', 'format', 'repr', 'eval', 'exec', 'compile', 'chr', 'ord', 'bin', 'hex',
+        'oct', 'id', 'hash', 'object', 'property', 'staticmethod', 'classmethod',
+        
+        # Методы строк
+        'upper', 'lower', 'title', 'capitalize', 'strip', 'lstrip', 'rstrip', 'split',
+        'join', 'replace', 'find', 'rfind', 'index', 'count', 'startswith', 'endswith',
+        'isalpha', 'isdigit', 'isalnum', 'isspace', 'islower', 'isupper',
+        
+        # Методы списков/множеств
+        'append', 'extend', 'insert', 'remove', 'pop', 'clear', 'index', 'count', 'sort',
+        'reverse', 'copy', 'add', 'update', 'discard',
+        
+        # Методы словарей
+        'keys', 'values', 'items', 'get', 'setdefault', 'update', 'pop', 'popitem',
+        
+        # Методы файлов
+        'read', 'write', 'readline', 'readlines', 'writelines', 'close', 'flush', 'seek', 'tell',
+        
+        # Методы Path
+        'exists', 'is_file', 'is_dir', 'mkdir', 'rmdir', 'unlink', 'rename', 'absolute',
+        'resolve', 'parent', 'name', 'stem', 'suffix',
+        
+        # JSON/pickle
+        'load', 'loads', 'dump', 'dumps',
+        
+        # Исключения
+        'ValueError', 'TypeError', 'KeyError', 'IndexError', 'AttributeError', 'RuntimeError',
+        'NotImplementedError', 'Exception', 'BaseException',
+    }
 
     def __init__(self, parsed_data: Dict[str, Any]):
         """Инициализация анализатора
@@ -42,8 +79,17 @@ class CodeAnalyzer:
         for func in self.parsed_data['functions']:
             func_name = func['name']
 
-            # Пропускаем entry points
-            if func_name in ['main', '__init__', '__main__']:
+            # Пропускаем entry points и специальные методы
+            if func_name in ['main', '__init__', '__main__', '__call__', '__str__', '__repr__']:
+                continue
+            
+            # Пропускаем magic methods
+            if func_name.startswith('__') and func_name.endswith('__'):
+                continue
+            
+            # Пропускаем функции из if __name__ == '__main__' блока
+            # (эти функции часто вызываются вручную, не через код)
+            if func.get('in_main_block', False):
                 continue
 
             # Проверяем есть ли входящие вызовы
@@ -68,18 +114,24 @@ class CodeAnalyzer:
 
         for func in self.parsed_data['functions']:
             for called in func.get('calls', []):
+                # Пропускаем встроенные функции и методы
+                if called in self.BUILTINS:
+                    continue
+                    
+                # Пропускаем приватные методы (начинаются с _)
+                if called.startswith('_'):
+                    continue
+                
                 # Если вызов не в списке функций и не импортирован
                 if called not in all_functions and called not in all_imports:
-                    # Пропускаем встроенные функции
-                    if called not in dir(__builtins__):
-                        self.issues.append({
-                            'type': 'broken_call',
-                            'severity': 'error',
-                            'file': func['file'],
-                            'line': func['line_start'],
-                            'function': func['name'],
-                            'message': f"Calls undefined function '{called}'"
-                        })
+                    self.issues.append({
+                        'type': 'broken_call',
+                        'severity': 'error',
+                        'file': func['file'],
+                        'line': func['line_start'],
+                        'function': func['name'],
+                        'message': f"Calls undefined function '{called}'"
+                    })
 
     def find_placeholders(self) -> None:
         """Ищет заглушки: pass, TODO, FIXME, NotImplementedError"""
