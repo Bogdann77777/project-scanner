@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Project Analyzer</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <!-- vis.js: сначала пытаемся локальный файл, потом CDN fallback -->
+    <script src="{{ url_for('static', filename='js/vis-network.min.js') }}" 
+            onerror="console.error('Local vis.js failed, loading from CDN...'); 
+                     this.onerror=null; 
+                     var script=document.createElement('script'); 
+                     script.src='https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js'; 
+                     document.head.appendChild(script);"></script>
+</head>
+<body>
+    <!-- Header -->
+    <header>
+        <h1>Project Analyzer</h1>
+        <div>
+            <button id="exportBtn" class="settings-btn" style="display: none; margin-right: 10px;">📥 Export JSON</button>
+            <button id="settingsBtn" class="settings-btn">⚙️ Settings</button>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <div class="container">
+        <!-- Upload Section (показывается до анализа) -->
+        <div id="uploadSection" class="upload-section">
+            <div class="upload-zone" id="uploadZone">
+                <div class="upload-icon">📁</div>
+                <p>Enter project path manually:</p>
+                <input type="text" id="pathInput" class="path-input" placeholder="E:\my_project или C:\Users\Name\project">
+                <p class="or">or drag & drop folder here</p>
+                <input type="file" id="folderInput" webkitdirectory directory multiple style="display: none;">
+                <button id="browseBtn" class="btn-primary" style="display: none;">Browse Folder</button>
+            </div>
+
+            <div id="selectedPath" class="selected-path" style="display: none;">
+                <span id="pathText"></span>
+            </div>
+
+            <button id="analyzeBtn" class="btn-analyze">
+                Start Analysis
+            </button>
+        </div>
+
+        <!-- Progress Section (показывается во время анализа) -->
+        <div id="progressSection" class="progress-section" style="display: none;">
+            <h2>Analyzing Project...</h2>
+            <div class="progress-bar">
+                <div id="progressFill" class="progress-fill"></div>
+            </div>
+            <p id="progressMessage">Initializing...</p>
+            <p id="progressPercent">0%</p>
+        </div>
+
+        <!-- Results Section (показывается после анализа) -->
+        <div id="resultsSection" class="results-section" style="display: none;">
+            <!-- Stats Bar -->
+            <div class="stats-bar">
+                <div class="stat-item">
+                    <span class="stat-label">Files</span>
+                    <span class="stat-value" id="statFiles">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Functions</span>
+                    <span class="stat-value" id="statFunctions">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Classes</span>
+                    <span class="stat-value" id="statClasses">0</span>
+                </div>
+                <div class="stat-item error">
+                    <span class="stat-label">Errors</span>
+                    <span class="stat-value" id="statErrors">0</span>
+                </div>
+                <div class="stat-item warning">
+                    <span class="stat-label">Warnings</span>
+                    <span class="stat-value" id="statWarnings">0</span>
+                </div>
+            </div>
+
+            <!-- Main Content Area -->
+            <div class="main-content">
+                <!-- Left Panel: File Tree -->
+                <div class="left-panel">
+                    <h3>Project Files</h3>
+                    <div id="fileTree" class="file-tree"></div>
+                </div>
+
+                <!-- Center Panel: Graph -->
+                <div class="center-panel">
+                    <!-- DEBUG INFO (С КНОПКОЙ ЗАКРЫТИЯ) -->
+                    <div id="debugInfo" style="position: absolute; top: 10px; left: 10px; z-index: 9999; background: rgba(0,0,0,0.95); color: lime; padding: 15px; font-family: monospace; font-size: 12px; max-width: 500px; max-height: 400px; overflow-y: auto; border: 3px solid lime; display: block;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <span style="font-size: 14px; font-weight: bold;">🔍 BROWSER DEBUG LOG</span>
+                            <button onclick="document.getElementById('debugInfo').style.display='none'" style="background: #ff4444; color: white; border: none; padding: 5px 10px; cursor: pointer; font-weight: bold;">✕ CLOSE</button>
+                        </div>
+                        <div id="debugText" style="white-space: pre-wrap; word-break: break-all;"></div>
+                    </div>
+
+                    <div class="graph-controls">
+                        <button id="zoomInBtn">🔍 +</button>
+                        <button id="zoomOutBtn">🔍 -</button>
+                        <button id="resetZoomBtn">⟲ Reset</button>
+                        <button id="fitBtn">⛶ Fit All</button>
+                    </div>
+                    <div id="graphContainer" class="graph-container"></div>
+                </div>
+
+                <!-- Right Panel: Issues -->
+                <div class="right-panel">
+                    <h3>Issues</h3>
+                    <div class="issues-tabs">
+                        <button class="tab-btn active" data-tab="errors">Errors <span id="errorCount" class="badge">0</span></button>
+                        <button class="tab-btn" data-tab="warnings">Warnings <span id="warningCount" class="badge">0</span></button>
+                        <button class="tab-btn" data-tab="info">Info <span id="infoCount" class="badge">0</span></button>
+                    </div>
+                    <div id="issuesList" class="issues-list"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Function Details -->
+    <div id="functionModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2 id="modalFunctionName"></h2>
+            <div class="modal-body">
+                <div class="modal-section">
+                    <h4>File</h4>
+                    <p id="modalFile"></p>
+                </div>
+                <div class="modal-section">
+                    <h4>Parameters</h4>
+                    <p id="modalParams"></p>
+                </div>
+                <div class="modal-section">
+                    <h4>Description</h4>
+                    <p id="modalDescription"></p>
+                </div>
+                <div class="modal-section">
+                    <h4>Code</h4>
+                    <pre id="modalCode"></pre>
+                </div>
+                <div class="modal-section">
+                    <h4>Dependencies</h4>
+                    <p id="modalCalls"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Settings -->
+    <div id="settingsModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Settings</h2>
+            <div class="modal-body">
+                <div class="setting-item">
+                    <label for="modelSelect">LLM Model</label>
+                    <select id="modelSelect">
+                        {% for model in config.models %}
+                        <option value="{{ model }}" {% if model == config.current_model %}selected{% endif %}>
+                            {{ model }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <button id="saveSettingsBtn" class="btn-primary">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/graph.js') }}"></script>
+</body>
+</html>

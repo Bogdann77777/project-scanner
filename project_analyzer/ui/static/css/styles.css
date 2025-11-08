@@ -1,0 +1,495 @@
+/* ===== БАЗОВЫЕ СТИЛИ ===== */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: #1a1a1a;
+    color: #e0e0e0;
+    overflow: hidden;
+}
+
+/* ===== HEADER ===== */
+header {
+    background: #252525;
+    padding: 1rem 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 2px solid #333;
+}
+
+header h1 {
+    font-size: 1.8rem;
+    color: #4CAF50;
+}
+
+.settings-btn {
+    background: transparent;
+    border: 1px solid #666;
+    color: #e0e0e0;
+    padding: 0.5rem 1rem;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 1rem;
+}
+
+.settings-btn:hover {
+    background: #333;
+}
+
+/* ===== CONTAINER ===== */
+.container {
+    height: calc(100vh - 80px);
+    padding: 2rem;
+}
+
+/* ===== UPLOAD SECTION ===== */
+.upload-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+}
+
+.upload-zone {
+    border: 3px dashed #666;
+    border-radius: 10px;
+    padding: 3rem;
+    text-align: center;
+    width: 500px;
+    background: #252525;
+    transition: all 0.3s;
+}
+
+.upload-zone:hover,
+.upload-zone.dragover {
+    border-color: #4CAF50;
+    background: #2a2a2a;
+}
+
+.upload-icon {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+}
+
+.upload-zone p {
+    margin: 0.5rem 0;
+    font-size: 1.1rem;
+}
+
+.path-input {
+    width: 100%;
+    max-width: 450px;
+    padding: 0.8rem;
+    margin: 1rem 0;
+    background: #1a1a1a;
+    border: 2px solid #666;
+    border-radius: 5px;
+    color: #e0e0e0;
+    font-size: 1rem;
+    font-family: 'Courier New', monospace;
+}
+
+.path-input:focus {
+    outline: none;
+    border-color: #4CAF50;
+}
+
+.path-input::placeholder {
+    color: #666;
+}
+
+.or {
+    color: #888;
+    margin: 1rem 0;
+    font-size: 0.9rem;
+}
+
+.btn-primary {
+    background: #4CAF50;
+    color: white;
+    border: none;
+    padding: 0.8rem 2rem;
+    border-radius: 5px;
+    font-size: 1rem;
+    cursor: pointer;
+    margin-top: 1rem;
+}
+
+.btn-primary:hover {
+    background: #45a049;
+}
+
+.selected-path {
+    margin-top: 1.5rem;
+    padding: 1rem;
+    background: #2a2a2a;
+    border-radius: 5px;
+    max-width: 600px;
+    word-break: break-all;
+}
+
+.btn-analyze {
+    background: #2196F3;
+    color: white;
+    border: none;
+    padding: 1rem 3rem;
+    border-radius: 5px;
+    font-size: 1.2rem;
+    cursor: pointer;
+    margin-top: 1.5rem;
+}
+
+.btn-analyze:hover {
+    background: #1976D2;
+}
+
+/* ===== PROGRESS SECTION ===== */
+.progress-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+}
+
+.progress-section h2 {
+    margin-bottom: 2rem;
+    color: #4CAF50;
+}
+
+.progress-bar {
+    width: 600px;
+    height: 30px;
+    background: #333;
+    border-radius: 15px;
+    overflow: hidden;
+    margin-bottom: 1rem;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #4CAF50, #2196F3);
+    width: 0%;
+    transition: width 0.5s;
+}
+
+#progressMessage {
+    font-size: 1.1rem;
+    margin: 0.5rem 0;
+}
+
+#progressPercent {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: #4CAF50;
+}
+
+/* ===== RESULTS SECTION ===== */
+.results-section {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Stats Bar */
+.stats-bar {
+    display: flex;
+    gap: 1rem;
+    padding: 1rem;
+    background: #252525;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+}
+
+.stat-item {
+    flex: 1;
+    text-align: center;
+    padding: 1rem;
+    background: #2a2a2a;
+    border-radius: 5px;
+}
+
+.stat-label {
+    display: block;
+    font-size: 0.9rem;
+    color: #888;
+    margin-bottom: 0.5rem;
+}
+
+.stat-value {
+    display: block;
+    font-size: 1.8rem;
+    font-weight: bold;
+    color: #4CAF50;
+}
+
+.stat-item.error .stat-value {
+    color: #F44336;
+}
+
+.stat-item.warning .stat-value {
+    color: #FF9800;
+}
+
+/* Main Content */
+.main-content {
+    display: flex;
+    gap: 1rem;
+    flex: 1;
+    overflow: hidden;
+    min-height: 0; /* Важно для flex детей с overflow */
+}
+
+/* Panels */
+.left-panel,
+.right-panel {
+    width: 250px;
+    background: #252525;
+    border-radius: 8px;
+    padding: 1rem;
+    overflow-y: auto;
+}
+
+.center-panel {
+    flex: 1;
+    background: #252525;
+    border-radius: 8px;
+    position: relative;
+    min-height: 600px; /* Минимальная высота для графа */
+    display: flex;
+    flex-direction: column;
+}
+
+/* File Tree */
+.file-tree {
+    margin-top: 1rem;
+}
+
+.tree-item {
+    padding: 0.5rem;
+    cursor: pointer;
+    border-radius: 3px;
+}
+
+.tree-item:hover {
+    background: #333;
+}
+
+.tree-folder {
+    font-weight: bold;
+    color: #2196F3;
+}
+
+.tree-file {
+    color: #e0e0e0;
+    padding-left: 1.5rem;
+}
+
+/* Graph Container */
+.graph-container {
+    width: 100%;
+    height: 100%;
+    flex: 1; /* Занимает всё доступное пространство */
+    border-radius: 8px;
+    min-height: 500px; /* Минимальная высота для vis.js */
+    background: #2a2a2a; /* Тёмный фон, чтобы видеть контейнер */
+    border: 2px solid #4CAF50; /* Зелёная рамка для отладки */
+}
+
+.graph-controls {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    z-index: 10;
+    display: flex;
+    gap: 0.5rem;
+}
+
+.graph-controls button {
+    background: #333;
+    border: 1px solid #666;
+    color: #e0e0e0;
+    padding: 0.5rem;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+.graph-controls button:hover {
+    background: #444;
+}
+
+/* Issues Panel */
+.issues-tabs {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.tab-btn {
+    flex: 1;
+    background: #2a2a2a;
+    border: none;
+    color: #e0e0e0;
+    padding: 0.7rem;
+    border-radius: 5px;
+    cursor: pointer;
+    position: relative;
+}
+
+.tab-btn.active {
+    background: #4CAF50;
+    color: white;
+}
+
+.badge {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    background: #F44336;
+    color: white;
+    border-radius: 50%;
+    padding: 2px 6px;
+    font-size: 0.7rem;
+}
+
+.issues-list {
+    max-height: calc(100vh - 300px);
+    overflow-y: auto;
+}
+
+.issue-item {
+    padding: 0.8rem;
+    margin-bottom: 0.5rem;
+    background: #2a2a2a;
+    border-left: 3px solid #666;
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+.issue-item:hover {
+    background: #333;
+}
+
+.issue-item.error {
+    border-left-color: #F44336;
+}
+
+.issue-item.warning {
+    border-left-color: #FF9800;
+}
+
+.issue-item.info {
+    border-left-color: #2196F3;
+}
+
+.issue-title {
+    font-weight: bold;
+    margin-bottom: 0.3rem;
+}
+
+.issue-location {
+    font-size: 0.85rem;
+    color: #888;
+}
+
+/* ===== MODAL ===== */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+}
+
+.modal-content {
+    background: #252525;
+    margin: 5% auto;
+    padding: 2rem;
+    border-radius: 10px;
+    width: 80%;
+    max-width: 900px;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+.close {
+    color: #aaa;
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.close:hover {
+    color: #fff;
+}
+
+.modal-body {
+    margin-top: 1rem;
+}
+
+.modal-section {
+    margin-bottom: 1.5rem;
+}
+
+.modal-section h4 {
+    color: #4CAF50;
+    margin-bottom: 0.5rem;
+}
+
+.modal-section pre {
+    background: #1a1a1a;
+    padding: 1rem;
+    border-radius: 5px;
+    overflow-x: auto;
+    color: #e0e0e0;
+}
+
+/* Settings Modal */
+.setting-item {
+    margin-bottom: 1rem;
+}
+
+.setting-item label {
+    display: block;
+    margin-bottom: 0.5rem;
+    color: #4CAF50;
+    font-weight: bold;
+}
+
+.setting-item select {
+    width: 100%;
+    padding: 0.7rem;
+    background: #1a1a1a;
+    color: #e0e0e0;
+    border: 1px solid #666;
+    border-radius: 5px;
+    font-size: 1rem;
+}
+
+/* ===== SCROLLBAR ===== */
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #1a1a1a;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #666;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #888;
+}
