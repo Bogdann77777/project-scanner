@@ -33,14 +33,37 @@ class CodeAnalyzer:
         
         # Методы Path
         'exists', 'is_file', 'is_dir', 'mkdir', 'rmdir', 'unlink', 'rename', 'absolute',
-        'resolve', 'parent', 'name', 'stem', 'suffix',
+        'resolve', 'parent', 'name', 'stem', 'suffix', 'is_absolute',
         
         # JSON/pickle
         'load', 'loads', 'dump', 'dumps',
         
+        # Logging
+        'info', 'debug', 'warning', 'error', 'critical', 'exception', 'log',
+        
+        # Threading
+        'Thread', 'Lock', 'RLock', 'Semaphore', 'Event', 'start', 'join', 'run',
+        
+        # UUID
+        'uuid4', 'uuid1', 'uuid3', 'uuid5',
+        
+        # Flask/Web
+        'route', 'get', 'post', 'put', 'delete', 'patch', 'render_template', 'redirect',
+        'url_for', 'request', 'jsonify', 'send_from_directory',
+        
+        # Datetime
+        'now', 'today', 'strftime', 'strptime', 'datetime', 'date', 'time', 'timedelta',
+        
+        # Requests
+        'post', 'get', 'put', 'delete', 'patch', 'head', 'options',
+        
+        # NetworkX
+        'DiGraph', 'Graph', 'add_node', 'add_edge', 'nodes', 'edges', 'neighbors',
+        'in_degree', 'out_degree', 'degree',
+        
         # Исключения
         'ValueError', 'TypeError', 'KeyError', 'IndexError', 'AttributeError', 'RuntimeError',
-        'NotImplementedError', 'Exception', 'BaseException',
+        'NotImplementedError', 'Exception', 'BaseException', 'raise_for_status',
     }
 
     def __init__(self, parsed_data: Dict[str, Any]):
