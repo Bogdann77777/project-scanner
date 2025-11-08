@@ -53,6 +53,7 @@ class CodeAnalyzer:
         
         # Datetime
         'now', 'today', 'strftime', 'strptime', 'datetime', 'date', 'time', 'timedelta',
+        'sleep',  # time.sleep()
         
         # Requests
         'post', 'get', 'put', 'delete', 'patch', 'head', 'options',
